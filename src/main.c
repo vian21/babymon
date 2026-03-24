@@ -2,6 +2,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "include/main.h"
+
 #define BLINK_GPIO 2
 
 static void blink_task(void* arg) {
