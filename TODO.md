@@ -2,24 +2,27 @@
   - [ ] research what are good values for l’hyperiode et cycle mineure
 
 - [ ] Implement ESP32 tasks
-  - [ ] send_sms (SMS_type, char\* msg, int length) - Patrick;
+  - [ ] Body temp (Adam)
+    - [-] read_body_temp
+    - [ ] monitor temp
+  - [ ] BPM monitor / heart rate
+    - [-] read_bpm()
+    - [ ] process_bpm()
+  - [ ] Blood Oxygen saturation monitor (Adam)
+  - [ ] CO2 monitor (Adam)
+    - [-] read_co2()
+    - [ ] validate_co2_level()
 
-  - [ ] ambient temperature monitor
+  - [ ] sound monitor (Hiba)
+  - [ ] ambient temperature monitor (Hiba)
     - [ ] read_bpm()
     - [ ] check_bpm()
 
-  - [ ] BPM monitor
-    - [ ] read_bpm()
-    - [ ] process_bpm()
-
-  - [ ] sound monitor
-    - [ ] CO2 monitor
-    - [ ] read_co2()
-
-  - [ ] validate_co2_level()
-  - [ ] Blood Oxygen saturation monitor
-  - [ ] mobility monitor
+  - [-] send_sms (SMS_type, char\* msg, int length) - Patrick;
+  - [ ] mobility monitor (Patrick)
   - [ ] control_hvac (Patrick)
+  - [ ] static memory allocation research (Patrick)
+  - [ ] wifi init task (Patrick)
 
 - [ ] Write the report
 
