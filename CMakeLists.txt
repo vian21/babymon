@@ -15,6 +15,14 @@ if(NOT TWILIO_ACCOUNT_SID OR NOT TWILIO_AUTH_TOKEN OR NOT TWILIO_FROM_NUMBER OR 
     message(FATAL_ERROR "Twilio credentials not set. Create .env file from .env.template")
 endif()
 
+if(NOT WIFI_SSID)
+    message(FATAL_ERROR "WIFI_SSID not set. Create .env file from .env.template")
+endif()
+
+if(NOT WIFI_PASSWORD)
+    message(FATAL_ERROR "WIFI_PASSWORD not set. Create .env file from .env.template")
+endif()
+
 message(STATUS "TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)

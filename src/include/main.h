@@ -4,4 +4,6 @@
 typedef enum { WARNING, ALARM } EVENT_LEVEL;
 
 int send_sms(EVENT_LEVEL level, char* msg, int len);
+void wifi_task(void* arguments);
+
 #endif // MAIN_H
