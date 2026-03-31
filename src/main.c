@@ -2,7 +2,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include "include/main.h"
+#include "main.h"
 
 #define BLINK_GPIO 2
 
