@@ -1,7 +1,7 @@
 idf_component_register(SRCS "main.c"
-                            "ambient_temp.c"
                             "co2.c"
                             "body_temp.c"
+                            "heart_rate.c"
                             "hvac.c"
                             "mobility_mon.c"
                             "oxy_sat.c"
