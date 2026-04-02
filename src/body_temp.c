@@ -84,7 +84,7 @@ static bool verify_temperature(float temperature_c) {
 }
 
 // ── Initialisation ────────────────────────────────────────────
-void MAX30205_Init(void) {
+static void MAX30205_Init(void) {
     // Configure I2C master (shared bus – init only once across sensors)
     i2c_config_t conf = {};
     conf.mode = I2C_MODE_MASTER;
@@ -114,6 +114,8 @@ void task_max30205_monitor(void* pvParameters) {
     (void)pvParameters;
 
     char buf[80];
+
+    MAX30205_Init();
 
     while (true) {
         float temperature_c = 0.0f;

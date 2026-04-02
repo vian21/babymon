@@ -24,6 +24,12 @@
 #include <stdio.h>
 #include "driver/uart.h"
 #include "esp_log.h"
+typedef struct {
+    int co2_ppm;
+    uint8_t status;
+    uint32_t timestamp_ms;
+} MHZ19_Data_t;
+
 
 static const char* TAG = "MHZ19";
 static const int UART_PORT = UART_NUM_2;
@@ -108,6 +114,8 @@ void task_mhz19_monitor(void* pvParameters) {
     (void)pvParameters;
 
     char buf[80];
+
+    MHZ19_Init();
 
     while (true) {
         MHZ19_Data_t data;

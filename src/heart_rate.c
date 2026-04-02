@@ -226,6 +226,8 @@ void task_max30102_monitor(void* pvParameters) {
 
     char buf[80];
 
+    MAX30102_Init();
+
     while (true) {
         float heart_rate_bpm = 0.0f;
         float spo2_percent = 0.0f;
