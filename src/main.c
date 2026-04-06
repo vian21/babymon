@@ -13,6 +13,7 @@ void app_main(void) {
     MHZ19_Init();
 
     xTaskCreate(wifi_task, "Wifi Man", 4096, NULL, 5, NULL);
+    xTaskCreate(mobility_task, "Mobility Mon", 4096, NULL, 5, NULL);
     xTaskCreate(task_max30205_monitor, "Body Temp Mon", 4096, NULL, 5, NULL);
 
     xTaskCreate(task_max30102_monitor, "Heart Rate Mon", 4096, NULL, 5, NULL);
