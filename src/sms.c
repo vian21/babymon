@@ -56,10 +56,25 @@ static esp_err_t http_event_handler(esp_http_client_event_t* evt) {
     return ESP_OK;
 }
 
+static void url_encode_msg(const char* src, char* dest, size_t dest_size) {
+    int j = 0;
+    for (int i = 0; src[i] != '\0' && j < (int)dest_size - 1; i++) {
+        if (src[i] == ' ') {
+            dest[j++] = '+';
+        } else {
+            dest[j++] = src[i];
+        }
+    }
+    dest[j] = '\0';
+}
+
 int send_sms(EVENT_LEVEL level, char* msg, int len) {
     char auth_header[128];
     char post_data[512];
     char url[256];
+    char encoded_msg[MSG_LEN * 2] = {0};
+
+    url_encode_msg(msg, encoded_msg, sizeof(encoded_msg));
 
     char credentials[64];
     snprintf(credentials,
@@ -84,12 +99,11 @@ int send_sms(EVENT_LEVEL level, char* msg, int len) {
 
     snprintf(post_data,
              sizeof(post_data),
-             "To=%s&From=%s&Body=[%s] %.*s",
+             "To=%s&From=%s&Body=[%s]+%s",
              TWILIO_TO_NUMBER,
              TWILIO_FROM_NUMBER,
              level == WARNING ? "WARNING" : "ALARM",
-             len,
-             msg);
+             encoded_msg);
 
     ESP_LOGI(TAG, "Sending SMS: %s", post_data);
 
