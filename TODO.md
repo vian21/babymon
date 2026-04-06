@@ -22,7 +22,7 @@
   - [ ] mobility monitor (Patrick)
   - [ ] control_hvac (Patrick)
   - [ ] static memory allocation research (Patrick)
-  - [ ] wifi init task (Patrick)
+  - [-] wifi init task (Patrick)
 
 - [ ] Write the report
 

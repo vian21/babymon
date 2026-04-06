@@ -9,7 +9,12 @@ idf_component_register(SRCS "main.c"
                             "sms.c"
                             "wifi.c"
                     INCLUDE_DIRS "." "include"
-                    REQUIRES esp_http_client mbedtls)
+                    REQUIRES esp_http_client
+                             esp_event
+                             esp_netif
+                             esp_wifi
+                             mbedtls
+                             nvs_flash)
 
 target_compile_definitions(${COMPONENT_TARGET} PRIVATE
     TWILIO_ACCOUNT_SID="${TWILIO_ACCOUNT_SID}"
