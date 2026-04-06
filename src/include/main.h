@@ -21,9 +21,9 @@ typedef struct {
 
 extern QueueHandle_t sms_queue;
 
-int send_sms(EVENT_LEVEL level, char* msg, int len);
+typedef enum { TEMPERATURE, HUMIDITY } measurement_type_t;
 
-// Tasks
+int control_hvac(measurement_type_t type, float current_val, float desired_val);
 void wifi_task(void* arguments);
 void mobility_task(void* arguments);
 void sms_task(void* arguments);
