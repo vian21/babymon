@@ -2,6 +2,7 @@
 #define MAIN_H
 
 #define MINUTE_MS (1000 * 60)
+#define MSG_LEN 256
 
 typedef enum { WARNING, ALARM } EVENT_LEVEL;
 
