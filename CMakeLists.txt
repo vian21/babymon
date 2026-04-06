@@ -29,4 +29,4 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 set(EXTRA_COMPONENT_DIRS src)
 project(BabyMon)
 
-set(REQUIRES esp_http_client mbedtls)
+set(REQUIRES esp_http_client mbedtls esp_crt_bundle)

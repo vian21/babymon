@@ -6,6 +6,7 @@
 #include "freertos/task.h"
 
 #include "main.h"
+#include "wifi_events.h"
 
 #ifndef ZIGBEE2MQTT_HOST
 #error "ZIGBEE2MQTT_HOST must be defined"
@@ -133,7 +134,14 @@ void mobility_task(void* arguments) {
     bool alarm_sent = false;
     char msg[MSG_LEN];
 
-    vTaskDelay(pdMS_TO_TICKS(10000));
+    // Wait for WiFi to be connected
+    if (wifi_event_group != NULL) {
+        xEventGroupWaitBits(wifi_event_group,
+                            WIFI_CONNECTED_BIT,
+                            pdFALSE,
+                            pdTRUE,
+                            portMAX_DELAY);
+    }
 
     while (1) {
         bool motion = query_motion_state();

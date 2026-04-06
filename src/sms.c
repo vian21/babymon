@@ -1,10 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "main.h"
 #include "mbedtls/base64.h"
+#include "wifi_events.h"
 
 #ifndef TWILIO_ACCOUNT_SID
 #error "TWILIO_ACCOUNT_SID must be set"
@@ -69,27 +71,52 @@ static void url_encode_msg(const char* src, char* dest, size_t dest_size) {
 }
 
 int send_sms(EVENT_LEVEL level, char* msg, int len) {
-    char auth_header[128];
+    if (sms_queue == NULL) {
+        ESP_LOGE(TAG, "SMS Queue not initialized");
+        return -1;
+    }
+
+    sms_msg_t message;
+    message.level = level;
+    memset(message.msg, 0, MSG_LEN);
+    strncpy(message.msg, msg, MSG_LEN - 1);
+
+    if (xQueueSend(sms_queue, &message, 0) != pdPASS) {
+        ESP_LOGW(TAG, "SMS Queue full, dropping message");
+        return -1;
+    }
+
+    ESP_LOGI(TAG, "SMS queued: %s", message.msg);
+    return 0;
+}
+
+static int perform_sms_send(EVENT_LEVEL level, char* msg) {
+    char auth_header[300];
     char post_data[512];
     char url[256];
     char encoded_msg[MSG_LEN * 2] = {0};
 
     url_encode_msg(msg, encoded_msg, sizeof(encoded_msg));
 
-    char credentials[64];
+    // Manual base64 encoding to proactively send Authorization header
+    char credentials[128];
     snprintf(credentials,
              sizeof(credentials),
              "%s:%s",
              TWILIO_ACCOUNT_SID,
              TWILIO_AUTH_TOKEN);
 
-    unsigned char encoded[64];
-    mbedtls_base64_encode(encoded,
-                          sizeof(encoded),
-                          NULL,
-                          (unsigned char*)credentials,
-                          strlen(credentials));
-
+    unsigned char encoded[256];
+    size_t out_len = 0;
+    int ret = mbedtls_base64_encode(encoded,
+                                    sizeof(encoded),
+                                    &out_len,
+                                    (unsigned char*)credentials,
+                                    strlen(credentials));
+    if (ret != 0) {
+        ESP_LOGE(TAG, "Base64 encode failed: %d", ret);
+        return -1;
+    }
     snprintf(auth_header, sizeof(auth_header), "Basic %s", encoded);
 
     snprintf(url,
@@ -111,6 +138,7 @@ int send_sms(EVENT_LEVEL level, char* msg, int len) {
         .url = url,
         .event_handler = http_event_handler,
         .method = HTTP_METHOD_POST,
+        .crt_bundle_attach = esp_crt_bundle_attach,
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -119,6 +147,7 @@ int send_sms(EVENT_LEVEL level, char* msg, int len) {
         return -1;
     }
 
+    // Set headers proactively to avoid 401 challenge issues
     esp_http_client_set_header(client, "Authorization", auth_header);
     esp_http_client_set_header(
         client, "Content-Type", "application/x-www-form-urlencoded");
@@ -140,4 +169,24 @@ int send_sms(EVENT_LEVEL level, char* msg, int len) {
 
     esp_http_client_cleanup(client);
     return err == ESP_OK ? 0 : -1;
+}
+
+void sms_task(void* arguments) {
+    sms_msg_t message;
+    while (1) {
+        if (xQueueReceive(sms_queue, &message, portMAX_DELAY) == pdPASS) {
+            ESP_LOGI(TAG, "Processing SMS from queue...");
+
+            // Wait for WiFi if needed
+            if (wifi_event_group != NULL) {
+                xEventGroupWaitBits(wifi_event_group,
+                                    WIFI_CONNECTED_BIT,
+                                    pdFALSE,
+                                    pdTRUE,
+                                    portMAX_DELAY);
+            }
+
+            perform_sms_send(message.level, message.msg);
+        }
+    }
 }
