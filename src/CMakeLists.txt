@@ -14,7 +14,8 @@ idf_component_register(SRCS "main.c"
                              esp_netif
                              esp_wifi
                              mbedtls
-                             nvs_flash)
+                             nvs_flash
+                             driver)
 
 target_compile_definitions(${COMPONENT_TARGET} PRIVATE
     TWILIO_ACCOUNT_SID="${TWILIO_ACCOUNT_SID}"
@@ -23,4 +24,8 @@ target_compile_definitions(${COMPONENT_TARGET} PRIVATE
     TWILIO_TO_NUMBER="${TWILIO_TO_NUMBER}"
     WIFI_SSID="${WIFI_SSID}"
     WIFI_PASSWORD="${WIFI_PASSWORD}"
+    ZIGBEE2MQTT_HOST="${ZIGBEE2MQTT_HOST}"
+    ZIGBEE2MQTT_PORT="${ZIGBEE2MQTT_PORT}"
+    MOTION_SENSOR_NAME="${MOTION_SENSOR_NAME}"
+    MOTION_TIMEOUT_SEC="${MOTION_TIMEOUT_SEC}"
 )
