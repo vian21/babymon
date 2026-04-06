@@ -14,7 +14,11 @@
 #error "WIFI_PASSWORD must be defined"
 #endif
 
+#include "wifi_events.h"
+
 static const char* TAG = "wifi_task";
+
+EventGroupHandle_t wifi_event_group;
 
 static void wifi_event_handler(void* arg,
                                esp_event_base_t event_base,
@@ -24,14 +28,17 @@ static void wifi_event_handler(void* arg,
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT &&
                event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
         esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*)event_data;
         ESP_LOGI(TAG, "Connected, IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
 
 void wifi_task(void* arg) {
+    wifi_event_group = xEventGroupCreate();
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
         ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -69,7 +76,5 @@ void wifi_task(void* arg) {
 
     ESP_LOGI(TAG, "wifi_task started, waiting for connection...");
 
-    while (1) {
-        vTaskDelay(pdMS_TO_TICKS(10000));
-    }
+    vTaskDelete(NULL);
 }

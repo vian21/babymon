@@ -6,8 +6,20 @@
 #include <stddef.h>
 
 #include "main.h"
+#include "test.h"
+
+QueueHandle_t sms_queue;
 
 void app_main(void) {
+    sms_queue = xQueueCreate(5, sizeof(sms_msg_t));
+    if (sms_queue == NULL) {
+        ESP_LOGE("MAIN", "Failed to create SMS queue");
+    }
+
     xTaskCreate(wifi_task, "Wifi Man", 4096, NULL, 5, NULL);
+    xTaskCreate(sms_task, "SMS Worker", 8192, NULL, 5, NULL);
     xTaskCreate(mobility_task, "Mobility Mon", 4096, NULL, 5, NULL);
+
+    // Tests
+    // xTaskCreate(test_sms, "test_sms", 4096, NULL, 5, NULL);
 }

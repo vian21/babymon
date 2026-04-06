@@ -18,11 +18,11 @@
     - [ ] read_bpm()
     - [ ] check_bpm()
 
-  - [-] send_sms (SMS_type, char\* msg, int length) - Patrick;
-  - [ ] mobility monitor (Patrick)
+  - [x] send_sms (SMS_type, char\* msg, int length) - Patrick;
+  - [-] mobility monitor (Patrick)
   - [ ] control_hvac (Patrick)
-  - [ ] static memory allocation research (Patrick)
-  - [-] wifi init task (Patrick)
+  - [x] static memory allocation research (Patrick)
+  - [x] wifi init task (Patrick)
 
 - [ ] Write the report
 
