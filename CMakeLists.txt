@@ -23,7 +23,18 @@ if(NOT WIFI_PASSWORD)
     message(FATAL_ERROR "WIFI_PASSWORD not set. Create .env file from .env.template")
 endif()
 
+if(NOT HA_HOST OR NOT HA_TOKEN OR NOT CLIMATE_ENTITY_ID OR NOT FAN_ENTITY_ID)
+    message(FATAL_ERROR "HA credentials not set. Create .env file from .env.template")
+endif()
+
 message(STATUS "TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}")
+message(STATUS "HA_HOST=${HA_HOST}")
+
+add_definitions(-DHA_HOST="${HA_HOST}")
+add_definitions(-DHA_PORT="${HA_PORT}")
+add_definitions(-DHA_TOKEN="${HA_TOKEN}")
+add_definitions(-DCLIMATE_ENTITY_ID="${CLIMATE_ENTITY_ID}")
+add_definitions(-DFAN_ENTITY_ID="${FAN_ENTITY_ID}")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 set(EXTRA_COMPONENT_DIRS src)

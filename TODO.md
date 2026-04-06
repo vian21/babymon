@@ -20,7 +20,7 @@
 
   - [x] send_sms (SMS_type, char\* msg, int length) - Patrick;
   - [-] mobility monitor (Patrick)
-  - [ ] control_hvac (Patrick)
+  - [-] control_hvac (Patrick)
   - [x] static memory allocation research (Patrick)
   - [x] wifi init task (Patrick)
 
