@@ -54,9 +54,9 @@ static esp_err_t http_event_handler(esp_http_client_event_t* evt) {
     return ESP_OK;
 }
 
-static void url_encode_spaces(const char* src, char* dest, size_t dest_size) {
+static void url_encode_name(const char* src, char* dest, size_t dest_size) {
     int j = 0;
-    for (int i = 0; src[i] != '\0' && j < dest_size - 3; i++) {
+    for (int i = 0; src[i] != '\0' && j < (int)dest_size - 3; i++) {
         if (src[i] == ' ') {
             dest[j++] = '%';
             dest[j++] = '2';
@@ -72,7 +72,7 @@ static bool query_motion_state(void) {
     char url[256];
     char encoded_name[128] = {0};
 
-    url_encode_spaces(MOTION_SENSOR_NAME, encoded_name, sizeof(encoded_name));
+    url_encode_name(MOTION_SENSOR_NAME, encoded_name, sizeof(encoded_name));
 
     snprintf(url,
              sizeof(url),
@@ -131,6 +131,7 @@ void mobility_task(void* arguments) {
     bool was_motion_detected = false;
     bool warning_sent = false;
     bool alarm_sent = false;
+    char msg[MSG_LEN];
 
     vTaskDelay(pdMS_TO_TICKS(10000));
 
@@ -151,17 +152,20 @@ void mobility_task(void* arguments) {
                 motion_state.motion_detected = false;
                 if (!alarm_sent) {
                     ESP_LOGE(TAG, "ALARM: No motion detected for >60 mins!");
-                    char msg[] =
-                        "ALARM: Aucun mouvement detecte depuis plus de 60 min!";
+                    snprintf(msg,
+                             MSG_LEN,
+                             "ALARM: Aucun mouvement detecte depuis plus de 60 "
+                             "min!");
                     send_sms(ALARM, msg, strlen(msg));
                     alarm_sent = true;
                 }
             } else if (elapsed_sec > (NO_MOTION_WARN_TIMEOUT_MIN * 60)) {
                 if (!warning_sent) {
                     ESP_LOGW(TAG, "WARNING: No motion detected for >40 mins.");
-                    char msg[] =
-                        "ATTENTION: Aucun mouvement detecte depuis plus de 40 "
-                        "min.";
+                    snprintf(msg,
+                             MSG_LEN,
+                             "ATTENTION: Aucun mouvement detecte depuis plus "
+                             "de 40 min.");
                     send_sms(WARNING, msg, strlen(msg));
                     warning_sent = true;
                 }
