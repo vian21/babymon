@@ -23,3 +23,17 @@
 | 20  | Le système embarqué doit **consommer peu d’énergie**                                            |      N      |
 | 21  | le système utilisera FreeRTOS                                                                   |      F      |
 | 22  | le système utilisera un ESP32 comme processeur                                                  |      F      |
+| 23  | Le système doit **envoyer un SMS si la température corporelle est en dessous de 36 °C**.        |      F      |
+| 24  | Le système doit **activer le ventilateur et alerter par SMS si la temp. corporelle > 37,5 °C**. |      F      |
+| 25  | Le système doit **émettre un avertissement si aucun mouvement n'est détecté de 40 à 60 min**.   |      F      |
+| 26  | Le système doit **envoyer un SMS si aucun mouvement n'est détecté après 60 min**.               |      F      |
+| 27  | Le système doit **envoyer un SMS si la fréquence cardiaque est sous 120 ou au-dessus de 180**.  |      F      |
+| 28  | Le système doit **émettre un avertissement pour la saturation en oxygène**.                     |      F      |
+| 29  | Le système doit **émettre un avertissement en cas de pleurs (sons)**.                           |      F      |
+| 30  | Le système doit **allumer le chauffage si la température ambiante est en dessous de 20 °C**.    |      F      |
+| 31  | Le système doit **allumer le ventilateur si la température ambiante est au-dessus de 22,2 °C**. |      F      |
+| 32  | Le système doit **activer l'alarme en cas de détection de fumée d'incendie**.                   |      F      |
+| 33  | Le système doit **allumer la lumière du sommeil si le bébé bouge**.                             |      F      |
+| 34  | Le système doit **éteindre la lumière du sommeil si le bébé ne bouge pas**.                     |      F      |
+| 35  | Le système doit **activer le déshumidificateur si l'humidité est à plus de 55 %**.              |      F      |
+| 36  | Le système doit **signaler de changer le filtre à air en cas de particules**.                   |      F      |
