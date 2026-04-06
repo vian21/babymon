@@ -1,3 +1,4 @@
+#include <string.h>
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
@@ -56,10 +57,11 @@ void wifi_task(void* arg) {
                 .threshold.authmode = WIFI_AUTH_WPA2_PSK,
             },
     };
-    memcpy(wifi_config.sta.ssid, WIFI_SSID, sizeof(wifi_config.sta.ssid));
-    memcpy(wifi_config.sta.password,
-           WIFI_PASSWORD,
-           sizeof(wifi_config.sta.password));
+    strlcpy(
+        (char*)wifi_config.sta.ssid, WIFI_SSID, sizeof(wifi_config.sta.ssid));
+    strlcpy((char*)wifi_config.sta.password,
+            WIFI_PASSWORD,
+            sizeof(wifi_config.sta.password));
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
@@ -67,5 +69,7 @@ void wifi_task(void* arg) {
 
     ESP_LOGI(TAG, "wifi_task started, waiting for connection...");
 
-    vTaskDelete(NULL);
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(10000));
+    }
 }
