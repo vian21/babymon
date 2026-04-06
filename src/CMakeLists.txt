@@ -8,6 +8,7 @@ idf_component_register(SRCS "main.c"
                             "sound_mon.c"
                             "sms.c"
                             "wifi.c"
+                            "test.c"
                     INCLUDE_DIRS "." "include"
                     REQUIRES esp_http_client
                              esp_event
