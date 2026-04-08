@@ -3,6 +3,8 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#define MINUTE_MS (1000 * 60)
+#define MSG_LEN 128
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
