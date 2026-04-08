@@ -1,0 +1,16 @@
+{
+  "name": "baby-monitor-ui",
+  "version": "1.0.0",
+  "description": "UI for baby monitor telemetry",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "libsql": "^0.5.29",
+    "socket.io": "^4.7.5",
+    "ws": "^8.17.1"
+  }
+}

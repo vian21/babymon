@@ -6,6 +6,7 @@
 #include "freertos/task.h"
 
 #include "main.h"
+#include "telemetry.h"
 #include "wifi_events.h"
 
 #ifndef ZIGBEE2MQTT_HOST
@@ -152,7 +153,9 @@ void mobility_task(void* arguments) {
             motion_state.last_motion_time = xTaskGetTickCount();
             warning_sent = false;
             alarm_sent = false;
+            send_telemetry(MOVEMENT, "1");
         } else {
+            send_telemetry(MOVEMENT, "0");
             uint32_t elapsed_sec = (xTaskGetTickCount() - last_motion_tick) *
                                    portTICK_PERIOD_MS / 1000;
 
@@ -165,6 +168,7 @@ void mobility_task(void* arguments) {
                              "ALARM: Aucun mouvement detecte depuis plus de 60 "
                              "min!");
                     send_sms(ALARM, msg, strlen(msg));
+                    send_telemetry(TELEMETRY_ALERT, msg);
                     alarm_sent = true;
                 }
             } else if (elapsed_sec > (NO_MOTION_WARN_TIMEOUT_MIN * 60)) {
@@ -175,6 +179,7 @@ void mobility_task(void* arguments) {
                              "ATTENTION: Aucun mouvement detecte depuis plus "
                              "de 40 min.");
                     send_sms(WARNING, msg, strlen(msg));
+                    send_telemetry(TELEMETRY_WARNING, msg);
                     warning_sent = true;
                 }
             }
