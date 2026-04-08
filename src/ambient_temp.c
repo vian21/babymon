@@ -198,14 +198,23 @@ static bool ambient_temperature_out_of_range(float temperature_c) {
 }
 
 void ambient_temp_task(void* arguments) {
-    (void)arguments;
+    ambient_task_args_t* args = (ambient_task_args_t*)arguments;
 
     for (;;) {
         float temperature_c = 0.0f;
         esp_err_t err = bme680_read_temperature(&temperature_c);
 
         if (err == ESP_OK) {
+            if (task_args){
+                task_args->value = temperature_c;
+            }
             ESP_LOGI(TAG, "Ambient temperature: %.2f C", temperature_c);
+            if (task_args) {
+                ESP_LOGI(TAG,
+                         "Ambient metric type=%d current=%.2f wanted=%.2f",
+                         task_args->type,
+                         task_args->value,
+                         task_args->wanted_value);}
 
             if (ambient_temperature_out_of_range(temperature_c)) {
                 control_hvac(temperature_c);
