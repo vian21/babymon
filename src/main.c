@@ -10,6 +10,12 @@
 #include "test.h"
 
 QueueHandle_t sms_queue;
+static ambient_task_args_t ambient_temp_args = {
+    .type = DATA_TYPE_AMBIENT_TEMP,
+    .value = 0.0f,
+    .wanted_value = 21.0f,
+};
+
 
 void app_main(void) {
     sms_queue = xQueueCreate(5, sizeof(sms_msg_t));
@@ -42,6 +48,9 @@ void app_main(void) {
 
     xTaskCreate(task_mhz19_monitor, "CO2 Mon", 4096, NULL, 5, NULL);
 
+    xTaskCreate(ambient_temp_task, "Ambient Temp", 4096, &ambient_temp_args, 4, NULL);
+
+    xTaskCreate(sound_mon_task, "Sound Monitor", 8192, NULL, 3, NULL);
     // Tests
     // xTaskCreate(test_sms, "test_sms", 4096, NULL, 5, NULL);
     // xTaskCreate(test_telemetry, "test_telemetry", 4096, NULL, 5, NULL);

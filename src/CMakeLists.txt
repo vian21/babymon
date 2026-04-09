@@ -11,6 +11,7 @@ idf_component_register(SRCS "main.c"
                             "wifi.c"
                             "test.c"
                             "telemetry.c"
+                            "ambient_temp.c"
                     INCLUDE_DIRS "." "include"
                     REQUIRES esp_http_client
                              esp_event
