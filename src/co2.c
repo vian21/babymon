@@ -30,7 +30,6 @@ typedef struct {
     uint32_t timestamp_ms;
 } MHZ19_Data_t;
 
-
 static const char* TAG = "MHZ19";
 static const int UART_PORT = UART_NUM_2;
 static const int TX_PIN = 17;
@@ -67,14 +66,43 @@ static bool read_co2_data(MHZ19_Data_t* data) {
 
     int rx_len = uart_read_bytes(UART_PORT, response, 9, pdMS_TO_TICKS(1000));
 
-    if (rx_len != 9 || response[0] != 0xFF || response[1] != 0x86 ||
-        response[8] != calc_checksum(response)) {
+    if (rx_len != 9) {
+        ESP_LOGE(TAG, "Bad: rx_len=%d (expected 9)", rx_len);
+        // Log what we did receive
+        if (rx_len > 0) {
+            ESP_LOGE(TAG, "Received bytes: ");
+            for (int i = 0; i < rx_len; i++) {
+                ESP_LOGE(TAG, "  [%d] = 0x%02x", i, response[i]);
+            }
+        }
+        return false;
+    }
+
+    if (response[0] != 0xFF) {
+        ESP_LOGE(TAG, "Bad: resp[0]=%02x (expected 0xFF)", response[0]);
+        return false;
+    }
+
+    if (response[1] != 0x86) {
+        ESP_LOGE(TAG, "Bad: resp[1]=%02x (expected 0x86)", response[1]);
+        return false;
+    }
+
+    uint8_t cs_calc = calc_checksum(response);
+    if (response[8] != cs_calc) {
+        ESP_LOGE(
+            TAG, "Bad checksum: cs=%02x vs calc=%02x", response[8], cs_calc);
         return false;
     }
 
     data->co2_ppm = (response[2] << 8) | response[3];
     data->status = response[5];
     data->timestamp_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+    ESP_LOGI(TAG,
+             "CO2 reading: %d ppm, status: 0x%02x",
+             data->co2_ppm,
+             data->status);
     return true;
 }
 
@@ -98,7 +126,9 @@ void MHZ19_Init(void) {
     uart_driver_install(UART_PORT, BUF_SIZE * 2, 0, 0, NULL, 0);
 
     // Disable ABC (Automatic Baseline Correction) for indoor use
+    ESP_LOGI(TAG, "Sending ABC OFF command...");
     uart_write_bytes(UART_PORT, (const char*)CMD_ABC_OFF, 9);
+    vTaskDelay(pdMS_TO_TICKS(100)); // Wait for command to be sent
 
     // Allow sensor warm-up (3 min recommended; at minimum flush the pipe)
     ESP_LOGI(TAG, "MH-Z19 warming up – wait 3 min for accurate readings.");
@@ -107,6 +137,14 @@ void MHZ19_Init(void) {
              UART_PORT,
              TX_PIN,
              RX_PIN);
+
+    // Clear any leftover data in UART buffer
+    uint8_t dummy[256];
+    int flushed =
+        uart_read_bytes(UART_PORT, dummy, sizeof(dummy), pdMS_TO_TICKS(100));
+    if (flushed > 0) {
+        ESP_LOGI(TAG, "Flushed %d bytes from UART buffer", flushed);
+    }
 }
 
 // ── Monitor task ──────────────────────────────────────────────
