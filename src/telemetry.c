@@ -1,9 +1,11 @@
 #include "telemetry.h"
+#include <inttypes.h>
 #include <string.h>
 #include <time.h>
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
+#include "wifi_events.h"
 
 #ifndef TELEMETRY_SERVER_IP
 #error "TELEMETRY_SERVER_IP must be defined"
@@ -58,6 +60,9 @@ esp_err_t telemetry_http_event_handler(esp_http_client_event_t* evt) {
     case HTTP_EVENT_DISCONNECTED:
         ESP_LOGD(TAG, "HTTP_EVENT_DISCONNECTED");
         break;
+    case HTTP_EVENT_REDIRECT:
+        ESP_LOGD(TAG, "HTTP_EVENT_REDIRECT");
+        break;
     }
     return ESP_OK;
 }
@@ -87,7 +92,8 @@ void telemetry_task(void* arg) {
             char post_data[256];
             snprintf(post_data,
                      sizeof(post_data),
-                     "{\"type\":\"%s\",\"value\":\"%s\",\"timestamp\":%u}",
+                     "{\"type\":\"%s\",\"value\":\"%s\",\"timestamp\":%" PRIu32
+                     "}",
                      type_strings[msg.type],
                      msg.value,
                      msg.timestamp);

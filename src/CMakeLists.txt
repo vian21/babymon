@@ -1,7 +1,8 @@
+
 idf_component_register(SRCS "main.c"
-                            "ambient_temp.c"
                             "co2.c"
                             "body_temp.c"
+                            "heart_rate.c"
                             "hvac.c"
                             "mobility_mon.c"
                             "oxy_sat.c"
@@ -9,6 +10,7 @@ idf_component_register(SRCS "main.c"
                             "sms.c"
                             "wifi.c"
                             "test.c"
+                            "telemetry.c"
                     INCLUDE_DIRS "." "include"
                     REQUIRES esp_http_client
                              esp_event
@@ -29,4 +31,6 @@ target_compile_definitions(${COMPONENT_TARGET} PRIVATE
     ZIGBEE2MQTT_PORT="${ZIGBEE2MQTT_PORT}"
     MOTION_SENSOR_NAME="${MOTION_SENSOR_NAME}"
     MOTION_TIMEOUT_SEC="${MOTION_TIMEOUT_SEC}"
+    TELEMETRY_SERVER_IP="${TELEMETRY_SERVER_IP}"
+    TELEMETRY_SERVER_PORT="${TELEMETRY_SERVER_PORT}"
 )

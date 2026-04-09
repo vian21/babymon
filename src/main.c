@@ -23,9 +23,24 @@ void app_main(void) {
     }
 
     xTaskCreate(wifi_task, "Wifi Man", 4096, NULL, 5, NULL);
+
     xTaskCreate(sms_task, "SMS Worker", 8192, NULL, 5, NULL);
+
     xTaskCreate(mobility_task, "Mobility Mon", 4096, NULL, 5, NULL);
+
     xTaskCreate(telemetry_task, "Telemetry Worker", 8192, NULL, 5, NULL);
+
+    xTaskCreate(task_max30205_monitor, "Body Temp Mon", 4096, NULL, 5, NULL);
+
+    xTaskCreate(task_max30102_monitor, "Heart Rate Mon", 4096, NULL, 5, NULL);
+
+    xTaskCreate(task_mhz19_monitor, "CO2 Mon", 4096, NULL, 5, NULL);
+
+    xTaskCreate(task_max30205_monitor, "Body Temp Mon", 4096, NULL, 5, NULL);
+
+    xTaskCreate(task_max30102_monitor, "Heart Rate Mon", 4096, NULL, 5, NULL);
+
+    xTaskCreate(task_mhz19_monitor, "CO2 Mon", 4096, NULL, 5, NULL);
 
     // Tests
     // xTaskCreate(test_sms, "test_sms", 4096, NULL, 5, NULL);
