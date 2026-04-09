@@ -25,7 +25,10 @@ typedef struct {
 
 extern QueueHandle_t sms_queue;
 
-typedef enum { TEMPERATURE_MEASUREMENT, HUMIDITY_MEASUREMENT } measurement_type_t;
+typedef enum {
+    TEMPERATURE_MEASUREMENT,
+    HUMIDITY_MEASUREMENT
+} measurement_type_t;
 
 int control_hvac(measurement_type_t type, float current_val, float desired_val);
 void wifi_task(void* arguments);
@@ -35,6 +38,6 @@ void task_max30205_monitor(void* pvParameters);
 void task_mhz19_monitor(void* pvParameters);
 void task_max30102_monitor(void* pvParameters);
 int send_sms(EVENT_LEVEL level, char* msg, int len);
-void ambient_temp_task(void* arguments);
+void amb_temp_hum_task(void* arguments);
 void sound_mon_task(void* arguments);
 #endif // MAIN_H

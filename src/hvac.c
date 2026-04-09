@@ -132,6 +132,7 @@ static int handle_humidity(float current_val, float desired_val) {
 int control_hvac(measurement_type_t type,
                  float current_val,
                  float desired_val) {
+    return 0;
     switch (type) {
     case TEMPERATURE_MEASUREMENT:
         return handle_temperature(current_val, desired_val);

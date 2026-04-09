@@ -11,7 +11,8 @@ idf_component_register(SRCS "main.c"
                             "wifi.c"
                             "test.c"
                             "telemetry.c"
-                            "ambient_temp.c"
+                            "amb_temp_humidity.c"
+                            "bme680.c"
                     INCLUDE_DIRS "." "include"
                     REQUIRES esp_http_client
                              esp_event
