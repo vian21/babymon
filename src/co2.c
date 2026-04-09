@@ -134,19 +134,6 @@ void task_mhz19_monitor(void* pvParameters) {
             continue;
         }
 
-        const char* quality;
-        if (data.co2_ppm < 600)
-            quality = "EXCELLENT";
-        else if (data.co2_ppm < 1000)
-            quality = "GOOD";
-        else if (data.co2_ppm < 1500)
-            quality = "MODERATE";
-        else if (data.co2_ppm < 2000)
-            quality = "POOR";
-        else
-            quality = "VERY POOR";
-
-
         if (data.co2_ppm >= CO2_ALERT) {
             int len = snprintf(
                 buf,
