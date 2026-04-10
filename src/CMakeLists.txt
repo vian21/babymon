@@ -1,7 +1,6 @@
 
 idf_component_register(SRCS "main.c"
                             "co2.c"
-                            "body_temp.c"
                             "heart_rate.c"
                             "hvac.c"
                             "mobility_mon.c"
@@ -13,6 +12,8 @@ idf_component_register(SRCS "main.c"
                             "telemetry.c"
                             "amb_temp_humidity.c"
                             "bme680.c"
+                            "body_temp.c"
+                            "max30205_driver.c"
                     INCLUDE_DIRS "." "include"
                     REQUIRES esp_http_client
                              esp_event
