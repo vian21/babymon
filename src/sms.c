@@ -81,8 +81,19 @@ int send_sms(EVENT_LEVEL level, char* msg, int len) {
     memset(message.msg, 0, MSG_LEN);
     strncpy(message.msg, msg, MSG_LEN - 1);
 
+    // Check if queue is full
+    if (uxQueueMessagesWaiting(sms_queue) >= SMS_QUEUE_SIZE) {
+        // Queue is full, remove oldest message
+        sms_msg_t old_message;
+        if (xQueueReceive(sms_queue, &old_message, 0) == pdPASS) {
+            ESP_LOGW(TAG,
+                     "SMS Queue full, removing oldest message: %s",
+                     old_message.msg);
+        }
+    }
+
     if (xQueueSend(sms_queue, &message, 0) != pdPASS) {
-        ESP_LOGW(TAG, "SMS Queue full, dropping message");
+        ESP_LOGW(TAG, "Failed to send SMS to queue");
         return -1;
     }
 

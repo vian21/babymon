@@ -21,7 +21,6 @@
 #define SOUND_SAMPLE_RATE_HZ 16000
 #define SOUND_WINDOW_FRAMES 1024
 #define SOUND_FRAME_SLOT_COUNT 2
-#define SOUND_LEFT_SLOT_INDEX 0
 #define SOUND_SAMPLE_SHIFT_BITS 8
 #define SOUND_DMA_BUFFER_COUNT 4
 #define SOUND_DMA_BUFFER_LENGTH 256
@@ -29,11 +28,12 @@
 #define SOUND_ERROR_RETRY_DELAY_MS 250
 #define SOUND_LOG_PERIOD_MS 1000
 #define SOUND_WIRING_HINT_PERIOD_MS 3000
-#define SOUND_LOOP_DELAY_MS 10
+#define SOUND_LOOP_DELAY_MS 100
 
 #define SOUND_THRESHOLD_MARGIN_DB 10.0f
 #define SOUND_MIN_TRIGGER_RMS 8000.0f
 #define SOUND_BASELINE_WARMUP_WINDOWS 8
+#define SOUND_CONSECUTIVE_LOUD_WINDOWS 4
 #define SOUND_BASELINE_RISE_ALPHA 0.02f
 #define SOUND_BASELINE_FALL_ALPHA 0.10f
 #define SOUND_SMS_COOLDOWN_MS (2 * 60 * 1000)
@@ -54,12 +54,16 @@ typedef struct {
     float baseline_rms;
     float threshold_ratio;
     size_t warmup_windows;
+    size_t consecutive_loud_windows;
 } sound_mon_state_t;
 
-// The mic is wired to the left I2S slot, so we ignore the right slot entirely.
-static int32_t sound_mon_get_left_sample(size_t frame_index) {
-    return s_sound_raw_samples[(frame_index * SOUND_FRAME_SLOT_COUNT) +
-                               SOUND_LEFT_SLOT_INDEX] >>
+typedef enum {
+    SOUND_SLOT_LEFT = 0,
+    SOUND_SLOT_RIGHT = 1,
+} sound_slot_t;
+
+static int32_t sound_mon_get_sample(size_t frame_index, sound_slot_t slot) {
+    return s_sound_raw_samples[(frame_index * SOUND_FRAME_SLOT_COUNT) + slot] >>
            SOUND_SAMPLE_SHIFT_BITS;
 }
 
@@ -83,6 +87,12 @@ static float sound_mon_update_baseline(float baseline_rms,
     }
 
     return baseline_rms;
+}
+
+static bool sound_mon_sms_cooldown_active(const sound_mon_state_t* state,
+                                          TickType_t now) {
+    return state->last_sms_tick != 0 &&
+           (now - state->last_sms_tick) < pdMS_TO_TICKS(SOUND_SMS_COOLDOWN_MS);
 }
 
 static esp_err_t sound_mon_init(void) {
@@ -136,7 +146,7 @@ static void sound_mon_handle_read_error(sound_mon_state_t* state,
     ESP_LOGE(TAG, "Sound monitor read failed: %s", esp_err_to_name(err));
 
     // Repeated read failures can happen in a tight loop, so rate-limit alarms.
-    if ((now - state->last_sms_tick) < pdMS_TO_TICKS(SOUND_SMS_COOLDOWN_MS)) {
+    if (sound_mon_sms_cooldown_active(state, now)) {
         return;
     }
 
@@ -148,7 +158,7 @@ static void sound_mon_handle_read_error(sound_mon_state_t* state,
     state->last_sms_tick = now;
 }
 
-// If the left slot is returning only zeros for a while, print a wiring hint.
+// If neither slot is returning audio for a while, print a wiring hint.
 static void sound_mon_maybe_log_wiring_hint(const sound_window_stats_t* window,
                                             sound_mon_state_t* state,
                                             TickType_t now) {
@@ -159,7 +169,7 @@ static void sound_mon_maybe_log_wiring_hint(const sound_window_stats_t* window,
     }
 
     ESP_LOGW(TAG,
-             "Left mic channel is silent. Check VDD->3.3V, GND->GND, "
+             "Mic data is silent on both I2S slots. Check VDD->3.3V, GND->GND, "
              "BCLK->GPIO26, LRCLK->GPIO25, DOUT->GPIO34, and tie SEL "
              "to GND.");
     state->last_wiring_hint_tick = now;
@@ -207,15 +217,13 @@ static void sound_mon_log_status(sound_mon_state_t* state,
                                  float threshold,
                                  bool threshold_armed,
                                  bool is_loud) {
-    if ((now - state->last_log_tick) < pdMS_TO_TICKS(SOUND_LOG_PERIOD_MS)) {
-        return;
-    }
-
     ESP_LOGI(TAG,
-             "value=%.2f threshold=%.2f status=%s",
+             "value=%.2f threshold=%.2f status=%s loud_count=%u/%u",
              rms,
              threshold,
-             threshold_armed ? (is_loud ? "LOUD" : "quiet") : "warming");
+             threshold_armed ? (is_loud ? "LOUD" : "quiet") : "warming",
+             (unsigned int)state->consecutive_loud_windows,
+             (unsigned int)SOUND_CONSECUTIVE_LOUD_WINDOWS);
     state->last_log_tick = now;
 }
 
@@ -229,24 +237,29 @@ static void sound_mon_maybe_send_loud_sms(sound_mon_state_t* state,
                                           bool is_loud) {
     char message[MSG_LEN];
 
-    if (!is_loud ||
-        (now - state->last_sms_tick) < pdMS_TO_TICKS(SOUND_SMS_COOLDOWN_MS)) {
+    if (!is_loud) {
+        return;
+    }
+
+    if (state->consecutive_loud_windows < SOUND_CONSECUTIVE_LOUD_WINDOWS ||
+        sound_mon_sms_cooldown_active(state, now)) {
         return;
     }
 
     snprintf(message,
              sizeof(message),
-             "Loud sound detected (value %.0f > threshold %.0f)",
+             "Loud sound detected after %u consecutive windows (value %.0f > "
+             "threshold %.0f)",
+             SOUND_CONSECUTIVE_LOUD_WINDOWS,
              rms,
              threshold);
     send_sms(WARNING, message, strlen(message));
     state->last_sms_tick = now;
+    state->consecutive_loud_windows = 0;
 }
 
 static esp_err_t sound_mon_read_window(sound_window_stats_t* stats_out) {
     size_t bytes_read = 0;
-    double energy = 0.0;
-    int64_t sample_sum = 0;
     sound_window_stats_t stats = {0};
 
     if (!stats_out) {
@@ -272,27 +285,50 @@ static esp_err_t sound_mon_read_window(sound_window_stats_t* stats_out) {
         return ESP_ERR_TIMEOUT;
     }
 
-    for (size_t i = 0; i < frame_count; ++i) {
-        int32_t sample = sound_mon_get_left_sample(i);
+    int64_t sample_sum[SOUND_FRAME_SLOT_COUNT] = {0};
+    size_t nonzero_samples[SOUND_FRAME_SLOT_COUNT] = {0};
 
-        if (sample != 0) {
-            ++stats.nonzero_samples;
+    for (size_t i = 0; i < frame_count; ++i) {
+        for (size_t slot = 0; slot < SOUND_FRAME_SLOT_COUNT; ++slot) {
+            int32_t sample = sound_mon_get_sample(i, (sound_slot_t)slot);
+
+            if (sample != 0) {
+                ++nonzero_samples[slot];
+            }
+
+            sample_sum[slot] += sample;
         }
-
-        sample_sum += sample;
     }
 
-    int32_t sample_mean = (int32_t)(sample_sum / (int64_t)frame_count);
+    double energy[SOUND_FRAME_SLOT_COUNT] = {0};
+    int32_t sample_mean[SOUND_FRAME_SLOT_COUNT] = {
+        (int32_t)(sample_sum[SOUND_SLOT_LEFT] / (int64_t)frame_count),
+        (int32_t)(sample_sum[SOUND_SLOT_RIGHT] / (int64_t)frame_count),
+    };
 
-    // Remove the DC offset before computing RMS so the value reflects sound energy.
     for (size_t i = 0; i < frame_count; ++i) {
-        double sample =
-            (double)sound_mon_get_left_sample(i) - (double)sample_mean;
+        for (size_t slot = 0; slot < SOUND_FRAME_SLOT_COUNT; ++slot) {
+            double sample =
+                (double)sound_mon_get_sample(i, (sound_slot_t)slot) -
+                (double)sample_mean[slot];
 
-        energy += sample * sample;
+            energy[slot] += sample * sample;
+        }
     }
 
-    stats.rms = (float)sqrt(energy / (double)frame_count);
+    float slot_rms[SOUND_FRAME_SLOT_COUNT] = {
+        (float)sqrt(energy[SOUND_SLOT_LEFT] / (double)frame_count),
+        (float)sqrt(energy[SOUND_SLOT_RIGHT] / (double)frame_count),
+    };
+
+    sound_slot_t active_slot = SOUND_SLOT_LEFT;
+    if (nonzero_samples[SOUND_SLOT_RIGHT] > nonzero_samples[SOUND_SLOT_LEFT] &&
+        slot_rms[SOUND_SLOT_RIGHT] >= slot_rms[SOUND_SLOT_LEFT]) {
+        active_slot = SOUND_SLOT_RIGHT;
+    }
+
+    stats.nonzero_samples = nonzero_samples[active_slot];
+    stats.rms = slot_rms[active_slot];
     *stats_out = stats;
     return ESP_OK;
 }
@@ -332,13 +368,22 @@ void sound_mon_task(void* arguments) {
                                           threshold,
                                           threshold_armed,
                                           is_loud);
-        sound_mon_log_status(&state,
-                             now,
-                             rms,
-                             threshold,
-                             threshold_armed,
-                             is_loud);
-        sound_mon_maybe_send_loud_sms(&state, now, rms, threshold, is_loud);
+
+        if ((now - state.last_log_tick) >= pdMS_TO_TICKS(SOUND_LOG_PERIOD_MS)) {
+            if (!is_loud) {
+                state.consecutive_loud_windows = 0;
+            } else {
+                ++state.consecutive_loud_windows;
+            }
+
+            sound_mon_log_status(&state,
+                                 now,
+                                 rms,
+                                 threshold,
+                                 threshold_armed,
+                                 is_loud);
+            sound_mon_maybe_send_loud_sms(&state, now, rms, threshold, is_loud);
+        }
 
         vTaskDelay(pdMS_TO_TICKS(SOUND_LOOP_DELAY_MS));
     }

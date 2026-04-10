@@ -14,12 +14,13 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "shared_i2c.h"
 
 // Pin configuration from docs/pins.md
-#define MAX30205_I2C_PORT I2C_NUM_0
-#define MAX30205_SDA_PIN 21
-#define MAX30205_SCL_PIN 22
-#define MAX30205_I2C_FREQ_HZ 400000 // 400 kHz fast-mode (from body_temp.c)
+#define MAX30205_I2C_PORT BABYMON_SENSOR_I2C_PORT
+#define MAX30205_SDA_PIN BABYMON_SENSOR_I2C_SDA_PIN
+#define MAX30205_SCL_PIN BABYMON_SENSOR_I2C_SCL_PIN
+#define MAX30205_I2C_FREQ_HZ BABYMON_SENSOR_I2C_FREQ_HZ
 
 // Default I2C address (A0, A1, A2 connected to GND)
 #define MAX30205_DEFAULT_ADDRESS 0x48
@@ -32,36 +33,11 @@ static const char* MAX30205_TAG = "MAX30205";
  * @return 0 on success, non-zero on error
  */
 static uint8_t max30205_i2c_init(void) {
-    i2c_config_t conf = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = MAX30205_SDA_PIN,
-        .scl_io_num = MAX30205_SCL_PIN,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = MAX30205_I2C_FREQ_HZ,
-    };
-
-    esp_err_t err = i2c_param_config(MAX30205_I2C_PORT, &conf);
+    esp_err_t err = babymon_sensor_i2c_init();
     if (err != ESP_OK) {
-        ESP_LOGE(
-            MAX30205_TAG, "I2C param config failed: %s", esp_err_to_name(err));
+        ESP_LOGE(MAX30205_TAG, "Shared I2C init failed: %s", esp_err_to_name(err));
         return 1;
     }
-
-    err = i2c_driver_install(MAX30205_I2C_PORT, I2C_MODE_MASTER, 0, 0, 0);
-    if (err == ESP_ERR_INVALID_STATE) {
-        ESP_LOGI(MAX30205_TAG, "I2C driver already installed on port %d", MAX30205_I2C_PORT);
-        return 0;
-    }
-
-    if (err != ESP_OK) {
-        ESP_LOGE(MAX30205_TAG,
-                 "I2C driver install failed: %s",
-                 esp_err_to_name(err));
-        return 1;
-    }
-
-    ESP_LOGI(MAX30205_TAG, "I2C initialized successfully");
     return 0;
 }
 
@@ -89,6 +65,12 @@ max30205_i2c_read(uint8_t addr, uint8_t reg, uint8_t* buf, uint16_t len) {
     // Convert to ESP32 format (7-bit address)
     uint8_t device_addr = addr >> 1;
 
+    esp_err_t err = babymon_sensor_i2c_lock(pdMS_TO_TICKS(150));
+    if (err != ESP_OK) {
+        ESP_LOGE(MAX30205_TAG, "I2C bus lock failed: %s", esp_err_to_name(err));
+        return 1;
+    }
+
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (device_addr << 1) | I2C_MASTER_WRITE, true);
@@ -102,9 +84,9 @@ max30205_i2c_read(uint8_t addr, uint8_t reg, uint8_t* buf, uint16_t len) {
     i2c_master_read(cmd, buf + len - 1, 1, I2C_MASTER_LAST_NACK);
 
     i2c_master_stop(cmd);
-    esp_err_t err =
-        i2c_master_cmd_begin(MAX30205_I2C_PORT, cmd, pdMS_TO_TICKS(100));
+    err = i2c_master_cmd_begin(MAX30205_I2C_PORT, cmd, pdMS_TO_TICKS(100));
     i2c_cmd_link_delete(cmd);
+    babymon_sensor_i2c_unlock();
 
     if (err != ESP_OK) {
         ESP_LOGE(MAX30205_TAG,
@@ -132,6 +114,12 @@ max30205_i2c_write(uint8_t addr, uint8_t reg, uint8_t* buf, uint16_t len) {
     // Convert to ESP32 format (7-bit address)
     uint8_t device_addr = addr >> 1;
 
+    esp_err_t err = babymon_sensor_i2c_lock(pdMS_TO_TICKS(150));
+    if (err != ESP_OK) {
+        ESP_LOGE(MAX30205_TAG, "I2C bus lock failed: %s", esp_err_to_name(err));
+        return 1;
+    }
+
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (device_addr << 1) | I2C_MASTER_WRITE, true);
@@ -142,9 +130,9 @@ max30205_i2c_write(uint8_t addr, uint8_t reg, uint8_t* buf, uint16_t len) {
     }
 
     i2c_master_stop(cmd);
-    esp_err_t err =
-        i2c_master_cmd_begin(MAX30205_I2C_PORT, cmd, pdMS_TO_TICKS(100));
+    err = i2c_master_cmd_begin(MAX30205_I2C_PORT, cmd, pdMS_TO_TICKS(100));
     i2c_cmd_link_delete(cmd);
+    babymon_sensor_i2c_unlock();
 
     if (err != ESP_OK) {
         ESP_LOGE(MAX30205_TAG,
@@ -159,8 +147,13 @@ max30205_i2c_write(uint8_t addr, uint8_t reg, uint8_t* buf, uint16_t len) {
 }
 
 static bool max30205_i2c_probe(uint8_t addr_7bit) {
+    if (babymon_sensor_i2c_lock(pdMS_TO_TICKS(150)) != ESP_OK) {
+        return false;
+    }
+
     esp_err_t err = i2c_master_write_to_device(
         MAX30205_I2C_PORT, addr_7bit, NULL, 0, pdMS_TO_TICKS(100));
+    babymon_sensor_i2c_unlock();
     return err == ESP_OK;
 }
 

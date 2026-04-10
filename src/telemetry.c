@@ -73,6 +73,19 @@ void send_telemetry(telemetry_type_t type, char* value) {
     strncpy(msg.value, value, MSG_LEN - 1);
     msg.value[MSG_LEN - 1] = '\0';
     msg.timestamp = (uint32_t)time(NULL);
+
+    // Check if queue is full
+    if (uxQueueMessagesWaiting(telemetry_queue) >= TELEMETRY_QUEUE_SIZE) {
+        // Queue is full, remove oldest telemetry message
+        telemetry_msg_t old_msg;
+        if (xQueueReceive(telemetry_queue, &old_msg, 0) == pdTRUE) {
+            ESP_LOGW(TAG,
+                     "Telemetry Queue full, removing oldest message: %s - %s",
+                     type_strings[old_msg.type],
+                     old_msg.value);
+        }
+    }
+
     if (xQueueSend(telemetry_queue, &msg, 0) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to send telemetry to queue");
     }

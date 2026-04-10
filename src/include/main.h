@@ -6,6 +6,8 @@
 
 #define MINUTE_MS (1000 * 60)
 #define MSG_LEN 128
+#define SMS_QUEUE_SIZE 20
+#define TELEMETRY_QUEUE_SIZE 20
 
 typedef enum { WARNING, ALARM } EVENT_LEVEL;
 typedef enum {

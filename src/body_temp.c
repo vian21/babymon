@@ -246,14 +246,14 @@ void task_max30205_monitor(void *pvParameters)
         if (!g_max30205.inited) {
             if (!max30205_driver_setup()) {
                 ESP_LOGW(TAG, "Retrying MAX30205 init");
-                vTaskDelay(pdMS_TO_TICKS(3000));
+                vTaskDelay(pdMS_TO_TICKS(READ_PERIOD));
                 continue;
             }
         }
 
         if (!read_temperature(&temperature_c)) {
             g_max30205.inited = 0;
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            vTaskDelay(pdMS_TO_TICKS(READ_PERIOD));
             continue;
         }
 
