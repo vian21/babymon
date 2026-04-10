@@ -16,21 +16,74 @@
 #define SOUND_I2S_PORT I2S_NUM_0
 #define SOUND_I2S_BCLK_GPIO 26
 #define SOUND_I2S_WS_GPIO 25
-#define SOUND_I2S_DATA_GPIO 33
+#define SOUND_I2S_DATA_GPIO 34
 
 #define SOUND_SAMPLE_RATE_HZ 16000
-#define SOUND_WINDOW_SAMPLES 1024
+#define SOUND_WINDOW_FRAMES 1024
+#define SOUND_FRAME_SLOT_COUNT 2
+#define SOUND_LEFT_SLOT_INDEX 0
+#define SOUND_SAMPLE_SHIFT_BITS 8
 #define SOUND_DMA_BUFFER_COUNT 4
 #define SOUND_DMA_BUFFER_LENGTH 256
 #define SOUND_WINDOW_TIMEOUT_MS 200
+#define SOUND_ERROR_RETRY_DELAY_MS 250
+#define SOUND_LOG_PERIOD_MS 1000
+#define SOUND_WIRING_HINT_PERIOD_MS 3000
+#define SOUND_LOOP_DELAY_MS 10
 
-#define SOUND_ABSOLUTE_RMS_THRESHOLD 120000.0f
-#define SOUND_BASELINE_MULTIPLIER 3.5f
-#define SOUND_CONSECUTIVE_WINDOWS 3
+#define SOUND_THRESHOLD_MARGIN_DB 10.0f
+#define SOUND_MIN_TRIGGER_RMS 8000.0f
+#define SOUND_BASELINE_WARMUP_WINDOWS 8
+#define SOUND_BASELINE_RISE_ALPHA 0.02f
+#define SOUND_BASELINE_FALL_ALPHA 0.10f
 #define SOUND_SMS_COOLDOWN_MS (2 * 60 * 1000)
 
 static const char* TAG = "sound_mon";
 static bool s_i2s_ready;
+static int32_t s_sound_raw_samples[SOUND_WINDOW_FRAMES * 2];
+
+typedef struct {
+    float rms;
+    size_t nonzero_samples;
+} sound_window_stats_t;
+
+typedef struct {
+    TickType_t last_sms_tick;
+    TickType_t last_log_tick;
+    TickType_t last_wiring_hint_tick;
+    float baseline_rms;
+    float threshold_ratio;
+    size_t warmup_windows;
+} sound_mon_state_t;
+
+// The mic is wired to the left I2S slot, so we ignore the right slot entirely.
+static int32_t sound_mon_get_left_sample(size_t frame_index) {
+    return s_sound_raw_samples[(frame_index * SOUND_FRAME_SLOT_COUNT) +
+                               SOUND_LEFT_SLOT_INDEX] >>
+           SOUND_SAMPLE_SHIFT_BITS;
+}
+
+static float sound_mon_update_baseline(float baseline_rms,
+                                       float rms,
+                                       float threshold) {
+    if (baseline_rms <= 0.0f) {
+        return rms;
+    }
+
+    if (rms < baseline_rms) {
+        // Let the baseline fall quickly when the room gets quieter again.
+        return (baseline_rms * (1.0f - SOUND_BASELINE_FALL_ALPHA)) +
+               (rms * SOUND_BASELINE_FALL_ALPHA);
+    }
+
+    if (rms < threshold) {
+        // Only learn louder background noise while we are still below "LOUD".
+        return (baseline_rms * (1.0f - SOUND_BASELINE_RISE_ALPHA)) +
+               (rms * SOUND_BASELINE_RISE_ALPHA);
+    }
+
+    return baseline_rms;
+}
 
 static esp_err_t sound_mon_init(void) {
     if (s_i2s_ready) {
@@ -41,8 +94,8 @@ static esp_err_t sound_mon_init(void) {
         .mode = I2S_MODE_MASTER | I2S_MODE_RX,
         .sample_rate = SOUND_SAMPLE_RATE_HZ,
         .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,
-        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
-        .communication_format = I2S_COMM_FORMAT_I2S,
+        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
         .intr_alloc_flags = 0,
         .dma_buf_count = SOUND_DMA_BUFFER_COUNT,
         .dma_buf_len = SOUND_DMA_BUFFER_LENGTH,
@@ -52,6 +105,7 @@ static esp_err_t sound_mon_init(void) {
     };
 
     i2s_pin_config_t pins = {
+        .mck_io_num = I2S_PIN_NO_CHANGE,
         .bck_io_num = SOUND_I2S_BCLK_GPIO,
         .ws_io_num = SOUND_I2S_WS_GPIO,
         .data_out_num = I2S_PIN_NO_CHANGE,
@@ -72,12 +126,130 @@ static esp_err_t sound_mon_init(void) {
     return ESP_OK;
 }
 
-static esp_err_t sound_mon_read_rms(float* rms_out) {
-    int32_t raw_samples[SOUND_WINDOW_SAMPLES];
+// Log a read failure and queue one alarm SMS if the cooldown window allows it.
+// This keeps repeated sensor errors from spamming the queue every loop.
+static void sound_mon_handle_read_error(sound_mon_state_t* state,
+                                        TickType_t now,
+                                        esp_err_t err) {
+    char message[MSG_LEN];
+
+    ESP_LOGE(TAG, "Sound monitor read failed: %s", esp_err_to_name(err));
+
+    // Repeated read failures can happen in a tight loop, so rate-limit alarms.
+    if ((now - state->last_sms_tick) < pdMS_TO_TICKS(SOUND_SMS_COOLDOWN_MS)) {
+        return;
+    }
+
+    snprintf(message,
+             sizeof(message),
+             "Sound monitor sensor failure: %s",
+             esp_err_to_name(err));
+    send_sms(ALARM, message, strlen(message));
+    state->last_sms_tick = now;
+}
+
+// If the left slot is returning only zeros for a while, print a wiring hint.
+static void sound_mon_maybe_log_wiring_hint(const sound_window_stats_t* window,
+                                            sound_mon_state_t* state,
+                                            TickType_t now) {
+    if (window->nonzero_samples != 0 ||
+        (now - state->last_wiring_hint_tick) <
+            pdMS_TO_TICKS(SOUND_WIRING_HINT_PERIOD_MS)) {
+        return;
+    }
+
+    ESP_LOGW(TAG,
+             "Left mic channel is silent. Check VDD->3.3V, GND->GND, "
+             "BCLK->GPIO26, LRCLK->GPIO25, DOUT->GPIO34, and tie SEL "
+             "to GND.");
+    state->last_wiring_hint_tick = now;
+}
+
+// During startup, learn the noise floor from the quietest early windows before
+// we allow any sound to count as "LOUD".
+static void sound_mon_warmup_baseline(sound_mon_state_t* state, float rms) {
+    if (state->warmup_windows >= SOUND_BASELINE_WARMUP_WINDOWS) {
+        return;
+    }
+
+    // Seed the baseline from the quietest startup windows to avoid boot noise.
+    state->baseline_rms =
+        state->baseline_rms == 0.0f ? rms : fminf(state->baseline_rms, rms);
+    ++state->warmup_windows;
+}
+
+// Keep tracking the room's background level, but do not learn from windows that
+// are already considered loud or they would raise the threshold too aggressively.
+static void sound_mon_update_runtime_baseline(sound_mon_state_t* state,
+                                              float rms,
+                                              float threshold,
+                                              bool threshold_armed,
+                                              bool is_loud) {
+    if (!threshold_armed) {
+        state->baseline_rms = state->baseline_rms == 0.0f
+                                  ? rms
+                                  : sound_mon_update_baseline(state->baseline_rms,
+                                                              rms,
+                                                              threshold);
+        return;
+    }
+
+    if (!is_loud) {
+        state->baseline_rms =
+            sound_mon_update_baseline(state->baseline_rms, rms, threshold);
+    }
+}
+
+// Print a compact status line for humans without flooding the serial monitor.
+static void sound_mon_log_status(sound_mon_state_t* state,
+                                 TickType_t now,
+                                 float rms,
+                                 float threshold,
+                                 bool threshold_armed,
+                                 bool is_loud) {
+    if ((now - state->last_log_tick) < pdMS_TO_TICKS(SOUND_LOG_PERIOD_MS)) {
+        return;
+    }
+
+    ESP_LOGI(TAG,
+             "value=%.2f threshold=%.2f status=%s",
+             rms,
+             threshold,
+             threshold_armed ? (is_loud ? "LOUD" : "quiet") : "warming");
+    state->last_log_tick = now;
+}
+
+// Queue one warning SMS for a loud event if the current window is above the
+// threshold and the cooldown has expired. "maybe" is literal here: most loops
+// do nothing because the sound is quiet or we are still inside the cooldown.
+static void sound_mon_maybe_send_loud_sms(sound_mon_state_t* state,
+                                          TickType_t now,
+                                          float rms,
+                                          float threshold,
+                                          bool is_loud) {
+    char message[MSG_LEN];
+
+    if (!is_loud ||
+        (now - state->last_sms_tick) < pdMS_TO_TICKS(SOUND_SMS_COOLDOWN_MS)) {
+        return;
+    }
+
+    snprintf(message,
+             sizeof(message),
+             "Loud sound detected (value %.0f > threshold %.0f)",
+             rms,
+             threshold);
+    send_sms(WARNING, message, strlen(message));
+    state->last_sms_tick = now;
+}
+
+static esp_err_t sound_mon_read_window(sound_window_stats_t* stats_out) {
     size_t bytes_read = 0;
     double energy = 0.0;
+    int64_t sample_sum = 0;
+    sound_window_stats_t stats = {0};
 
-    if (!rms_out) {
+    if (!stats_out) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -86,89 +258,88 @@ static esp_err_t sound_mon_read_rms(float* rms_out) {
     }
 
     esp_err_t err = i2s_read(SOUND_I2S_PORT,
-                             raw_samples,
-                             sizeof(raw_samples),
+                             s_sound_raw_samples,
+                             sizeof(s_sound_raw_samples),
                              &bytes_read,
                              pdMS_TO_TICKS(SOUND_WINDOW_TIMEOUT_MS));
     if (err != ESP_OK) {
         return err;
     }
 
-    size_t sample_count = bytes_read / sizeof(raw_samples[0]);
-    if (sample_count == 0) {
+    size_t frame_count =
+        bytes_read / (sizeof(s_sound_raw_samples[0]) * SOUND_FRAME_SLOT_COUNT);
+    if (frame_count == 0) {
         return ESP_ERR_TIMEOUT;
     }
 
-    for (size_t i = 0; i < sample_count; ++i) {
-        int32_t sample = raw_samples[i] >> 8;
-        energy += (double)sample * (double)sample;
+    for (size_t i = 0; i < frame_count; ++i) {
+        int32_t sample = sound_mon_get_left_sample(i);
+
+        if (sample != 0) {
+            ++stats.nonzero_samples;
+        }
+
+        sample_sum += sample;
     }
 
-    *rms_out = (float)sqrt(energy / (double)sample_count);
+    int32_t sample_mean = (int32_t)(sample_sum / (int64_t)frame_count);
+
+    // Remove the DC offset before computing RMS so the value reflects sound energy.
+    for (size_t i = 0; i < frame_count; ++i) {
+        double sample =
+            (double)sound_mon_get_left_sample(i) - (double)sample_mean;
+
+        energy += sample * sample;
+    }
+
+    stats.rms = (float)sqrt(energy / (double)frame_count);
+    *stats_out = stats;
     return ESP_OK;
 }
 
 void sound_mon_task(void* arguments) {
-    TickType_t last_sms_tick = 0;
-    float baseline_rms = 0.0f;
-    int loud_windows = 0;
+    sound_mon_state_t state = {
+        .threshold_ratio = powf(10.0f, SOUND_THRESHOLD_MARGIN_DB / 20.0f),
+    };
 
     (void)arguments;
 
     for (;;) {
-        float rms = 0.0f;
-        char message[160];
-        esp_err_t err = sound_mon_read_rms(&rms);
+        sound_window_stats_t window = {0};
+        TickType_t now = xTaskGetTickCount();
+        esp_err_t err = sound_mon_read_window(&window);
 
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Sound monitor read failed: %s", esp_err_to_name(err));
-            if ((xTaskGetTickCount() - last_sms_tick) >=
-                pdMS_TO_TICKS(SOUND_SMS_COOLDOWN_MS)) {
-                snprintf(message,
-                         sizeof(message),
-                         "Sound monitor sensor failure: %s",
-                         esp_err_to_name(err));
-                send_sms(ALARM, message, strlen(message));
-                last_sms_tick = xTaskGetTickCount();
-            }
-            vTaskDelay(pdMS_TO_TICKS(250));
+            sound_mon_handle_read_error(&state, now, err);
+            vTaskDelay(pdMS_TO_TICKS(SOUND_ERROR_RETRY_DELAY_MS));
             continue;
         }
 
-        if (baseline_rms == 0.0f) {
-            baseline_rms = rms;
-        }
+        float rms = window.rms;
+        sound_mon_maybe_log_wiring_hint(&window, &state, now);
+        sound_mon_warmup_baseline(&state, rms);
 
-        float dynamic_threshold = baseline_rms * SOUND_BASELINE_MULTIPLIER;
-        float threshold = dynamic_threshold > SOUND_ABSOLUTE_RMS_THRESHOLD
-                              ? dynamic_threshold
-                              : SOUND_ABSOLUTE_RMS_THRESHOLD;
+        // The threshold is whichever is higher: the learned noise floor plus
+        // margin, or the fixed minimum floor.
+        float threshold =
+            fmaxf(state.baseline_rms * state.threshold_ratio, SOUND_MIN_TRIGGER_RMS);
+        bool threshold_armed =
+            state.warmup_windows >= SOUND_BASELINE_WARMUP_WINDOWS;
+        bool is_loud = threshold_armed && rms > threshold;
 
-        if (rms > threshold) {
-            ++loud_windows;
-        } else {
-            loud_windows = 0;
-            baseline_rms = (baseline_rms * 0.98f) + (rms * 0.02f);
-        }
+        sound_mon_update_runtime_baseline(&state,
+                                          rms,
+                                          threshold,
+                                          threshold_armed,
+                                          is_loud);
+        sound_mon_log_status(&state,
+                             now,
+                             rms,
+                             threshold,
+                             threshold_armed,
+                             is_loud);
+        sound_mon_maybe_send_loud_sms(&state, now, rms, threshold, is_loud);
 
-        ESP_LOGI(TAG,
-                 "Sound RMS=%.2f baseline=%.2f threshold=%.2f loud_windows=%d",
-                 rms,
-                 baseline_rms,
-                 threshold,
-                 loud_windows);
-
-        if (loud_windows >= SOUND_CONSECUTIVE_WINDOWS &&
-            (xTaskGetTickCount() - last_sms_tick) >=
-                pdMS_TO_TICKS(SOUND_SMS_COOLDOWN_MS)) {
-            snprintf(message,
-                     sizeof(message),
-                     "Sustained loud sound detected (RMS %.0f), possible baby crying",
-                     rms);
-            send_sms(WARNING, message, strlen(message));
-            last_sms_tick = xTaskGetTickCount();
-            loud_windows = 0;
-            baseline_rms = rms;
-        }
+        vTaskDelay(pdMS_TO_TICKS(SOUND_LOOP_DELAY_MS));
     }
 }
