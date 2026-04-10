@@ -6,7 +6,11 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/.env)
     file(STRINGS ${CMAKE_SOURCE_DIR}/.env env_contents REGEX "^[^#].*")
     foreach(line ${env_contents})
         if(line MATCHES "^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
-            set(${CMAKE_MATCH_1} "${CMAKE_MATCH_2}" CACHE STRING "Twilio config")
+            set(${CMAKE_MATCH_1}
+                "${CMAKE_MATCH_2}"
+                CACHE STRING
+                ".env configuration"
+                FORCE)
         endif()
     endforeach()
 endif()

@@ -27,6 +27,7 @@
 #include "main.h"
 #include "max30102.h"
 #include "shared_i2c.h"
+#include "telemetry.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -504,6 +505,7 @@ void task_max30102_monitor(void* pvParameters) {
     uint32_t last_nofinger_ts = 0;
 
     char sms_buf[80];
+    char telemetry_buf[MSG_LEN];
 
     while (true) {
         uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -613,6 +615,12 @@ void task_max30102_monitor(void* pvParameters) {
                  now_ms,
                  smooth_hr,
                  smooth_spo2);
+
+        snprintf(telemetry_buf, sizeof(telemetry_buf), "%.1f", smooth_hr);
+        send_telemetry(HEART_RATE, telemetry_buf);
+
+        snprintf(telemetry_buf, sizeof(telemetry_buf), "%.1f", smooth_spo2);
+        send_telemetry(OXYGEN_SATURATION, telemetry_buf);
 
         /* ── 9. Alerts ──────────────────────────────────────────────────── */
         if (smooth_hr > HR_HIGH && sms_queue) {

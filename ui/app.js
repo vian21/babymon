@@ -1,20 +1,22 @@
 const socket = io();
 const chartsContainer = document.getElementById("charts-container");
+const chartsSection = document.querySelector(".charts-section");
 let charts = [];
 
 const viewSelect = document.getElementById("view-select");
 const notificationsDiv = document.getElementById("notifications");
 
-const numericTypes = [
-  "BODY_TEMPERATURE",
-  "AMBIENT_TEMPERATURE",
-  "HEART_RATE",
-  "OXYGEN_SATURATION",
-  "CO2_LEVEL",
-  "HUMIDITY",
-  "SOUND_LEVEL",
-];
 const notificationTypes = ["TELEMETRY_WARNING", "TELEMETRY_ALERT"];
+
+function groupByType(data) {
+  return data.reduce((grouped, item) => {
+    if (!notificationTypes.includes(item.type)) {
+      if (!grouped[item.type]) grouped[item.type] = [];
+      grouped[item.type].push(item);
+    }
+    return grouped;
+  }, {});
+}
 
 function getRandomColor() {
   const letters = "0123456789ABCDEF";
@@ -121,52 +123,39 @@ function createChart(type, data, view) {
 }
 
 function updateChart(data, notificationsData, view) {
+  const chartsScrollTop = chartsSection ? chartsSection.scrollTop : 0;
+  const notificationsScrollTop = notificationsDiv.scrollTop;
+  const pageScrollTop = window.scrollY;
+
   clearCharts();
   if (view === "today" || view === "date") {
-    const grouped = {};
-    data.forEach((item) => {
-      if (numericTypes.includes(item.type)) {
-        if (!grouped[item.type]) grouped[item.type] = [];
-        grouped[item.type].push(item);
-      }
-    });
+    const grouped = groupByType(data);
     Object.keys(grouped).forEach((type) => {
       createChart(type, grouped[type], view);
     });
   } else if (view === "summary") {
-    const grouped = {};
-    data.forEach((item) => {
-      if (numericTypes.includes(item.type)) {
-        if (!grouped[item.type]) grouped[item.type] = [];
-        grouped[item.type].push(item);
-      }
-    });
+    const grouped = groupByType(data);
     Object.keys(grouped).forEach((type) => {
-      // Create separate charts for avg, min, max
-      grouped[type].forEach((item) => {
-        // Avg chart
-        createChart(
-          `${type} avg`,
-          [{ date: item.date, avg: item.avg }],
-          "summary",
-        );
-        // Min chart
-        createChart(
-          `${type} min`,
-          [{ date: item.date, min: item.min }],
-          "summary",
-        );
-        // Max chart
-        createChart(
-          `${type} max`,
-          [{ date: item.date, max: item.max }],
-          "summary",
-        );
+      ["avg", "min", "max"].forEach((metric) => {
+        const metricData = grouped[type]
+          .filter((item) => item[metric] !== undefined && item[metric] !== null)
+          .map((item) => ({ date: item.date, [metric]: item[metric] }));
+        if (metricData.length) {
+          createChart(`${type} ${metric}`, metricData, "summary");
+        }
       });
     });
     // Add notifications chart
     createChart("notifications", notificationsData, view);
   }
+
+  requestAnimationFrame(() => {
+    if (chartsSection) {
+      chartsSection.scrollTop = chartsScrollTop;
+    }
+    notificationsDiv.scrollTop = notificationsScrollTop;
+    window.scrollTo(0, pageScrollTop);
+  });
 }
 
 function loadData(view, date = null) {
@@ -212,7 +201,6 @@ function addNotification(type, value, timestamp) {
   div.className = "notification";
   div.innerHTML = `<strong>${type}:</strong> ${value} <small>${new Date(timestamp * 1000).toLocaleString()}</small>`;
   notificationsDiv.appendChild(div);
-  notificationsDiv.scrollTop = notificationsDiv.scrollHeight;
 }
 
 viewSelect.addEventListener("change", () => {

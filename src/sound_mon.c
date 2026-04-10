@@ -12,6 +12,7 @@
 #include "freertos/task.h"
 
 #include "main.h"
+#include "telemetry.h"
 
 #define SOUND_I2S_PORT I2S_NUM_0
 #define SOUND_I2S_BCLK_GPIO 26
@@ -337,6 +338,7 @@ void sound_mon_task(void* arguments) {
     sound_mon_state_t state = {
         .threshold_ratio = powf(10.0f, SOUND_THRESHOLD_MARGIN_DB / 20.0f),
     };
+    char telemetry_buf[MSG_LEN];
 
     (void)arguments;
 
@@ -382,6 +384,8 @@ void sound_mon_task(void* arguments) {
                                  threshold,
                                  threshold_armed,
                                  is_loud);
+            snprintf(telemetry_buf, sizeof(telemetry_buf), "%.2f", rms);
+            send_telemetry(SOUND_LEVEL, telemetry_buf);
             sound_mon_maybe_send_loud_sms(&state, now, rms, threshold, is_loud);
         }
 

@@ -17,6 +17,7 @@
  */
 
 #include "main.h"
+#include "telemetry.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -152,6 +153,7 @@ void task_mhz19_monitor(void* pvParameters) {
     (void)pvParameters;
 
     char buf[80];
+    char telemetry_buf[MSG_LEN];
 
     MHZ19_Init();
 
@@ -171,6 +173,9 @@ void task_mhz19_monitor(void* pvParameters) {
             vTaskDelay(READ_PERIOD);
             continue;
         }
+
+        snprintf(telemetry_buf, sizeof(telemetry_buf), "%d", data.co2_ppm);
+        send_telemetry(CO2_LEVEL, telemetry_buf);
 
         if (data.co2_ppm >= CO2_ALERT) {
             int len = snprintf(

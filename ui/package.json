@@ -7,6 +7,8 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "chart.js": "^4.5.1",
+    "chartjs-adapter-date-fns": "^3.0.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "libsql": "^0.5.29",

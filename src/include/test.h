@@ -13,5 +13,6 @@
  * @param pvParameters Task parameters (unused)
  */
 void test_sms(void* pvParameters);
+void test_telemetry(void* pvParameters);
 
 #endif // TEST_H
