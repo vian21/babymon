@@ -2,6 +2,8 @@
 
 ### Configure the project
 
+This project uses the ESP Component Manager for external dependencies (like `esp_websocket_client`). These will be downloaded automatically during the first build.
+
 ```
 idf.py menuconfig
 ```

@@ -1,5 +1,7 @@
 .cache/clangd/index
 build
+managed_components
+dependencies.lock
 .env
 ui/node_modules
 ui/package-lock.json
