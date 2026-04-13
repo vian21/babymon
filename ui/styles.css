@@ -56,3 +56,206 @@ body {
     border-bottom: 1px solid #ccc;
   }
 }
+:root {
+    --text: #1f2937;
+    --muted-text: #5a6675;
+    --bg-radial-top: #f6f8fb;
+    --bg-radial-mid: #edf2f7;
+    --bg-radial-bottom: #e6ebf2;
+    --panel-border: #d4dbe6;
+    --card-bg: #ffffff;
+    --card-border: #d4dbe6;
+    --card-shadow: 0 10px 22px rgba(24, 39, 75, 0.08);
+    --notifications-bg: rgba(255, 255, 255, 0.65);
+    --notification-bg: #ffffff;
+    --needle-color: #1f2937;
+    --topbar-bg: rgba(255, 255, 255, 0.75);
+    --topbar-border: #d4dbe6;
+    --button-bg: #ffffff;
+    --button-border: #c7d0df;
+}
+
+body[data-theme="dark"] {
+    --text: #e7edf6;
+    --muted-text: #9fb0c8;
+    --bg-radial-top: #0d1320;
+    --bg-radial-mid: #111b2d;
+    --bg-radial-bottom: #0b1220;
+    --panel-border: #23314b;
+    --card-bg: #152137;
+    --card-border: #2c3a56;
+    --card-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+    --notifications-bg: rgba(16, 25, 42, 0.8);
+    --notification-bg: #1a2741;
+    --needle-color: #f0f4fa;
+    --topbar-bg: rgba(14, 23, 38, 0.88);
+    --topbar-border: #2b3a57;
+    --button-bg: #1d2b45;
+    --button-border: #3b4c6d;
+}
+
+body {
+    font-family: "Avenir Next", "Segoe UI", sans-serif;
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: radial-gradient(
+        circle at top,
+        var(--bg-radial-top) 0%,
+        var(--bg-radial-mid) 55%,
+        var(--bg-radial-bottom) 100%
+    );
+    color: var(--text);
+}
+
+.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--topbar-border);
+    background: var(--topbar-bg);
+    backdrop-filter: blur(6px);
+}
+
+.topbar h1 {
+    margin: 0;
+    font-size: 18px;
+    letter-spacing: 0.2px;
+}
+
+#theme-toggle {
+    border: 1px solid var(--button-border);
+    background: var(--button-bg);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+#theme-toggle:hover {
+    filter: brightness(1.05);
+}
+
+.container {
+    display: flex;
+    flex: 1;
+    height: 100%;
+}
+
+.charts-section {
+    flex: 0 0 70%;
+    padding: 20px;
+    border-right: 1px solid var(--panel-border);
+    overflow-y: auto;
+    overflow-anchor: none;
+    min-height: 600px;
+}
+
+.notifications-section {
+    flex: 0 0 30%;
+    padding: 20px;
+    overflow-y: auto;
+    background: var(--notifications-bg);
+}
+
+#charts-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 18px;
+    width: 100%;
+}
+
+.gauge-card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 18px;
+    padding: 16px;
+    box-shadow: var(--card-shadow);
+}
+
+.gauge-card h3 {
+    margin: 0 0 10px;
+    font-size: 15px;
+    letter-spacing: 0.3px;
+}
+
+.gauge-wrap {
+    height: 145px;
+    position: relative;
+}
+
+.gauge-value {
+    margin: 6px 0 8px;
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.status-pill {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 999px;
+    letter-spacing: 0.8px;
+}
+
+.status-good {
+    background: #d8f3df;
+    color: #1c8b4e;
+}
+
+.status-ok {
+    background: #fff2cc;
+    color: #9b6a00;
+}
+
+.status-bad {
+    background: #ffd9de;
+    color: #a31d32;
+}
+
+.status-unknown {
+    background: #e8edf3;
+    color: #5d6b7c;
+}
+
+.updated-at {
+    margin: 10px 0 0;
+    color: var(--muted-text);
+    font-size: 12px;
+}
+
+.notifications-section h3 {
+    margin-top: 0;
+}
+
+.notification {
+    border-left: 4px solid #d7263d;
+    background: var(--notification-bg);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    box-shadow: var(--card-shadow);
+}
+
+#notifications {
+    max-height: 100%;
+    overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+    .container {
+        flex-direction: column;
+    }
+    .charts-section,
+    .notifications-section {
+        flex: 1;
+        border-right: none;
+        border-bottom: 1px solid var(--panel-border);
+    }
+}

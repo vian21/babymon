@@ -1,199 +1,370 @@
 const socket = io();
 const chartsContainer = document.getElementById("charts-container");
-const chartsSection = document.querySelector(".charts-section");
-let charts = [];
-
-const viewSelect = document.getElementById("view-select");
 const notificationsDiv = document.getElementById("notifications");
+const themeToggle = document.getElementById("theme-toggle");
+
+const STATUS_COLORS = {
+  good: "#2ca25f",
+  ok: "#f2b705",
+  bad: "#d7263d",
+  unknown: "#9aa4b2",
+};
 
 const notificationTypes = ["TELEMETRY_WARNING", "TELEMETRY_ALERT"];
+const BINARY_TEXT_TYPES = ["MOVEMENT", "SMOKE_DETECTED"];
+const latestTelemetryByType = {};
 
-function groupByType(data) {
-  return data.reduce((grouped, item) => {
-    if (!notificationTypes.includes(item.type)) {
-      if (!grouped[item.type]) grouped[item.type] = [];
-      grouped[item.type].push(item);
-    }
-    return grouped;
-  }, {});
-}
+const SENSOR_CONFIG = {
+  BODY_TEMPERATURE: {
+    label: "Body Temperature",
+    unit: "C",
+    min: 34,
+    max: 41,
+    bands: [
+      { min: 34, max: 36, level: "bad" },
+      { min: 36, max: 36.5, level: "ok" },
+      { min: 36.5, max: 37.5, level: "good" },
+      { min: 37.5, max: 37.9, level: "ok" },
+      { min: 37.9, max: 41, level: "bad" },
+    ],
+  },
+  AMBIENT_TEMPERATURE: {
+    label: "Ambient Temperature",
+    unit: "C",
+    min: 10,
+    max: 40,
+    bands: [
+      { min: 10, max: 18, level: "bad" },
+      { min: 19, max: 20, level: "ok" },
+      { min: 20, max: 23, level: "good" },
+      { min: 23, max: 25, level: "ok" },
+      { min: 25, max: 40, level: "bad" },
+    ],
+  },
+  HEART_RATE: {
+    label: "Heart Rate",
+    unit: "bpm",
+    min: 60,
+    max: 210,
+    bands: [
+      { min: 60, max: 70, level: "bad" },
+      { min: 70, max: 80, level: "ok" },
+      { min: 80, max: 180, level: "good" },
+      { min: 180, max: 190, level: "ok" },
+      { min: 190, max: 210, level: "bad" },
+    ],
+  },
+  OXYGEN_SATURATION: {
+    label: "Oxygen Saturation",
+    unit: "%",
+    min: 80,
+    max: 100,
+    bands: [
+      { min: 80, max: 92, level: "bad" },
+      { min: 92, max: 95, level: "ok" },
+      { min: 95, max: 100, level: "good" },
+    ],
+  },
+  CO2_LEVEL: {
+    label: "CO2 Level",
+    unit: "ppm",
+    min: 300,
+    max: 3000,
+    bands: [
+      { min: 300, max: 1000, level: "good" },
+      { min: 1000, max: 1500, level: "ok" },
+      { min: 1500, max: 3000, level: "bad" },
+    ],
+  },
+  HUMIDITY: {
+    label: "Humidity",
+    unit: "%",
+    min: 0,
+    max: 100,
+    bands: [
+      { min: 0, max: 35, level: "bad" },
+      { min: 35, max: 45, level: "ok" },
+      { min: 45, max: 55, level: "good" },
+      { min: 55, max: 60, level: "ok" },
+      { min: 60, max: 100, level: "bad" },
+    ],
+  },
+  MOVEMENT: {
+    label: "Movement",
+    unit: "",
+    min: 0,
+    max: 1,
+  },
+  SOUND_LEVEL: {
+    label: "Sound Level",
+    unit: "level",
+    min: 0,
+    max: 40000,
+    bands: [
+      { min: 0, max: 12000, level: "good" },
+      { min: 12000, max: 25000, level: "ok" },
+      { min: 25000, max: 40000, level: "bad" },
+    ],
+  },
+  SMOKE_DETECTED: {
+    label: "Smoke Detection",
+    unit: "",
+    min: 0,
+    max: 1,
+  },
+};
 
-function getRandomColor() {
-  const letters = "0123456789ABCDEF";
-  let color = "#";
-  for (let i = 0; i < 6; i++) {
-    color += letters[Math.floor(Math.random() * 16)];
+const gaugeRegistry = {};
+
+function deriveSmokeFallbackEntry() {
+  // Prefer explicit smoke telemetry if available from firmware.
+  if (latestTelemetryByType.SMOKE_DETECTED) {
+    return null;
   }
-  return color;
+
+  const co2 = Number.parseFloat(latestTelemetryByType.CO2_LEVEL?.value);
+  const ambient = Number.parseFloat(latestTelemetryByType.AMBIENT_TEMPERATURE?.value);
+
+  const hasCo2 = Number.isFinite(co2);
+  const hasAmbient = Number.isFinite(ambient);
+  if (!hasCo2 && !hasAmbient) {
+    return null;
+  }
+
+  const smokeDetected = (hasCo2 && co2 >= 1600) || (hasAmbient && ambient >= 27);
+
+  const co2Ts = Number(latestTelemetryByType.CO2_LEVEL?.timestamp) || 0;
+  const ambientTs = Number(latestTelemetryByType.AMBIENT_TEMPERATURE?.timestamp) || 0;
+
+  return {
+    type: "SMOKE_DETECTED",
+    value: smokeDetected ? "1" : "0",
+    timestamp: Math.max(co2Ts, ambientTs),
+  };
 }
 
-function clearCharts() {
-  charts.forEach((chart) => chart.destroy());
-  charts = [];
-  chartsContainer.innerHTML = "";
+function refreshDerivedSmokeStatus() {
+  const fallback = deriveSmokeFallbackEntry();
+  if (fallback) {
+    updateGauge(fallback.type, fallback.value, fallback.timestamp);
+  }
 }
 
-function createChart(type, data, view) {
+const gaugeNeedlePlugin = {
+  id: "gaugeNeedle",
+  afterDatasetDraw(chart) {
+    const value = chart.$value;
+    const min = chart.$min;
+    const max = chart.$max;
+    if (value === null || value === undefined || Number.isNaN(value)) return;
+
+    const meta = chart.getDatasetMeta(0);
+    if (!meta || !meta.data || !meta.data.length) return;
+
+    const arc = meta.data[0];
+    const { ctx } = chart;
+    const clamped = Math.max(min, Math.min(max, value));
+    const ratio = (clamped - min) / (max - min || 1);
+    const angle = -Math.PI + ratio * Math.PI;
+    const radius = arc.outerRadius * 0.9;
+
+    ctx.save();
+    ctx.translate(arc.x, arc.y);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(radius, 0);
+    ctx.lineWidth = 3;
+    const needleColor = getComputedStyle(document.body)
+      .getPropertyValue("--needle-color")
+      .trim();
+    ctx.strokeStyle = needleColor || "#1f2937";
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, 5, 0, Math.PI * 2);
+    ctx.fillStyle = needleColor || "#1f2937";
+    ctx.fill();
+    ctx.restore();
+  },
+};
+
+Chart.register(gaugeNeedlePlugin);
+
+function formatSensorValue(type, value, config) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "--";
+  }
+  const rounded = Math.abs(value) >= 1000 ? Math.round(value) : value.toFixed(1);
+  return `${rounded}${config.unit ? ` ${config.unit}` : ""}`;
+}
+
+function formatBinaryStatusText(type, value) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "--";
+  }
+
+  const detected = value >= 0.5;
+  if (type === "SMOKE_DETECTED") {
+    return detected ? "SMOKE DETECTED" : "NORMAL";
+  }
+  if (type === "MOVEMENT") {
+    return detected ? "MOVEMENT DETECTED" : "NO MOVEMENT";
+  }
+
+  return detected ? "DETECTED" : "NORMAL";
+}
+
+function statusForValue(config, value) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "unknown";
+  }
+  const hit = config.bands.find((band) => value >= band.min && value < band.max);
+  return hit ? hit.level : "bad";
+}
+
+function createGauge(type, config) {
+  const card = document.createElement("article");
+  card.className = "gauge-card";
+
+  const title = document.createElement("h3");
+  title.textContent = config.label;
+
+  const gaugeWrap = document.createElement("div");
+  gaugeWrap.className = "gauge-wrap";
+
   const canvas = document.createElement("canvas");
-  chartsContainer.appendChild(canvas);
-  const ctx = canvas.getContext("2d");
+  gaugeWrap.appendChild(canvas);
 
-  let datasets = [];
-  let chartTitle = type;
+  const valueEl = document.createElement("p");
+  valueEl.className = "gauge-value";
+  valueEl.textContent = "--";
 
-  if (view === "today" || view === "date") {
-    datasets = [
-      {
-        label: type.replace(/_/g, " "),
-        data: data.map((item) => ({
-          x: new Date(item.timestamp * 1000),
-          y: parseFloat(item.value),
-        })),
-        borderColor: getRandomColor(),
-        fill: false,
-      },
-    ];
-    chartTitle = type.replace(/_/g, " ");
-  } else if (view === "summary") {
-    // Handle notifications
-    if (type === "notifications") {
-      datasets = [
+  const statusEl = document.createElement("span");
+  statusEl.className = "status-pill status-unknown";
+  statusEl.textContent = "UNKNOWN";
+
+  const updatedAtEl = document.createElement("p");
+  updatedAtEl.className = "updated-at";
+  updatedAtEl.textContent = "No data yet";
+
+  card.appendChild(title);
+  card.appendChild(gaugeWrap);
+  card.appendChild(valueEl);
+  card.appendChild(statusEl);
+  card.appendChild(updatedAtEl);
+  chartsContainer.appendChild(card);
+
+  const bandData = config.bands.map((band) => Math.max(0, band.max - band.min));
+  const bandColors = config.bands.map((band) => STATUS_COLORS[band.level]);
+
+  const chart = new Chart(canvas.getContext("2d"), {
+    type: "doughnut",
+    data: {
+      labels: config.bands.map((band) => band.level),
+      datasets: [
         {
-          label: "Notifications",
-          data: data.map((item) => ({ x: new Date(item.date), y: item.count })),
-          backgroundColor: "rgba(255, 99, 132, 0.2)",
-          borderColor: "rgba(255, 99, 132, 1)",
-          type: "bar",
+          data: bandData,
+          backgroundColor: bandColors,
+          borderWidth: 0,
         },
-      ];
-    }
-    // Handle avg/min/max charts (data will have one point with date and value)
-    else {
-      const metric = type.split(" ")[1]; // avg, min, or max
-      const baseType = type.split(" ")[0]; // e.g., BODY_TEMPERATURE
-
-      datasets = [
-        {
-          label: `${baseType} ${metric}`,
-          data: data.map((item) => ({
-            x: new Date(item.date),
-            y: item[metric] || item.value,
-          })),
-          borderColor: getRandomColor(),
-          fill: false,
-        },
-      ];
-      chartTitle = `${baseType} ${metric}`;
-    }
-  }
-
-  const chart = new Chart(ctx, {
-    type: type.includes("notifications") ? "bar" : "line",
-    data: { datasets },
+      ],
+    },
     options: {
       responsive: true,
-      scales: {
-        x: {
-          type: "time",
-          time: {
-            unit: view === "today" || view === "date" ? "hour" : "day",
-            tooltipFormat: "ll",
-          },
-        },
-        y: {
-          beginAtZero: false,
-        },
-      },
+      maintainAspectRatio: false,
+      rotation: 270,
+      circumference: 180,
+      cutout: "68%",
       plugins: {
-        title: {
-          display: true,
-          text: chartTitle,
-          font: {
-            size: 14,
-          },
-        },
-        tooltip: {
-          mode: "index",
-          intersect: false,
-        },
+        legend: { display: false },
+        tooltip: { enabled: false },
       },
     },
   });
-  charts.push(chart);
+
+  chart.$min = config.min;
+  chart.$max = config.max;
+  chart.$value = null;
+
+  gaugeRegistry[type] = {
+    chart,
+    config,
+    valueEl,
+    statusEl,
+    updatedAtEl,
+  };
 }
 
-function updateChart(data, notificationsData, view) {
-  const chartsScrollTop = chartsSection ? chartsSection.scrollTop : 0;
-  const notificationsScrollTop = notificationsDiv.scrollTop;
-  const pageScrollTop = window.scrollY;
+function createBinaryStatusCard(type, config) {
+  const card = document.createElement("article");
+  card.className = "gauge-card";
 
-  clearCharts();
-  if (view === "today" || view === "date") {
-    const grouped = groupByType(data);
-    Object.keys(grouped).forEach((type) => {
-      createChart(type, grouped[type], view);
-    });
-  } else if (view === "summary") {
-    const grouped = groupByType(data);
-    Object.keys(grouped).forEach((type) => {
-      ["avg", "min", "max"].forEach((metric) => {
-        const metricData = grouped[type]
-          .filter((item) => item[metric] !== undefined && item[metric] !== null)
-          .map((item) => ({ date: item.date, [metric]: item[metric] }));
-        if (metricData.length) {
-          createChart(`${type} ${metric}`, metricData, "summary");
-        }
-      });
-    });
-    // Add notifications chart
-    createChart("notifications", notificationsData, view);
+  const title = document.createElement("h3");
+  title.textContent = config.label;
+
+  const valueEl = document.createElement("p");
+  valueEl.className = "gauge-value";
+  valueEl.textContent = "--";
+
+  const statusEl = document.createElement("span");
+  statusEl.className = "status-pill status-unknown";
+  statusEl.textContent = "UNKNOWN";
+
+  const updatedAtEl = document.createElement("p");
+  updatedAtEl.className = "updated-at";
+  updatedAtEl.textContent = "No data yet";
+
+  card.appendChild(title);
+  card.appendChild(valueEl);
+  card.appendChild(statusEl);
+  card.appendChild(updatedAtEl);
+  chartsContainer.appendChild(card);
+
+  gaugeRegistry[type] = {
+    chart: null,
+    config,
+    valueEl,
+    statusEl,
+    updatedAtEl,
+  };
+}
+
+function updateGauge(type, value, timestamp) {
+  const gauge = gaugeRegistry[type];
+  if (!gauge) return;
+
+  const numericValue = Number.parseFloat(value);
+  const status = statusForValue(gauge.config, numericValue);
+
+  if (gauge.chart) {
+    gauge.chart.$value = Number.isFinite(numericValue) ? numericValue : null;
+    gauge.chart.update("none");
   }
 
-  requestAnimationFrame(() => {
-    if (chartsSection) {
-      chartsSection.scrollTop = chartsScrollTop;
+  if (BINARY_TEXT_TYPES.includes(type)) {
+    gauge.valueEl.textContent = formatBinaryStatusText(type, numericValue);
+  } else {
+    gauge.valueEl.textContent = formatSensorValue(type, numericValue, gauge.config);
+  }
+  gauge.statusEl.className = `status-pill status-${status}`;
+  gauge.statusEl.textContent = status.toUpperCase();
+
+  if (timestamp && Number(timestamp) > 0) {
+    gauge.updatedAtEl.textContent = `Updated ${new Date(
+      Number(timestamp) * 1000,
+    ).toLocaleTimeString()}`;
+  }
+}
+
+function renderAllGauges() {
+  chartsContainer.innerHTML = "";
+  Object.entries(SENSOR_CONFIG).forEach(([type, config]) => {
+    if (BINARY_TEXT_TYPES.includes(type)) {
+      createBinaryStatusCard(type, config);
+    } else {
+      createGauge(type, config);
     }
-    notificationsDiv.scrollTop = notificationsScrollTop;
-    window.scrollTo(0, pageScrollTop);
   });
-}
-
-function loadData(view, date = null) {
-  let url = `/api/telemetry?view=${view}`;
-  if (date) url += `&date=${date}`;
-  fetch(url)
-    .then((res) => res.json())
-    .then((data) => {
-      if (view === "summary") {
-        fetch("/api/notifications_summary")
-          .then((res) => res.json())
-          .then((notificationsData) =>
-            updateChart(data, notificationsData, view),
-          )
-          .catch((err) => console.error("Error fetching notifications:", err));
-      } else {
-        updateChart(data, [], view);
-      }
-    })
-    .catch((err) => console.error("Error fetching data:", err));
-}
-
-function loadDates() {
-  fetch("/api/dates")
-    .then((res) => res.json())
-    .then((dates) => {
-      // Clear existing options except first two
-      while (viewSelect.options.length > 2) {
-        viewSelect.remove(2);
-      }
-      dates.forEach((date) => {
-        const option = document.createElement("option");
-        option.value = `date:${date}`;
-        option.textContent = date;
-        viewSelect.appendChild(option);
-      });
-    })
-    .catch((err) => console.error("Error fetching dates:", err));
 }
 
 function addNotification(type, value, timestamp) {
@@ -203,29 +374,74 @@ function addNotification(type, value, timestamp) {
   notificationsDiv.appendChild(div);
 }
 
-viewSelect.addEventListener("change", () => {
-  const value = viewSelect.value;
-  if (value.startsWith("date:")) {
-    const date = value.split(":")[1];
-    loadData("date", date);
-  } else {
-    loadData(value);
+function applyLatestTelemetry(data) {
+  data.forEach((entry) => {
+    if (!entry || !entry.type || notificationTypes.includes(entry.type)) return;
+    if (!SENSOR_CONFIG[entry.type]) return;
+
+    const current = latestTelemetryByType[entry.type];
+    if (!current || Number(entry.timestamp) > Number(current.timestamp)) {
+      latestTelemetryByType[entry.type] = entry;
+    }
+  });
+
+  Object.entries(latestTelemetryByType).forEach(([type, item]) => {
+    updateGauge(type, item.value, item.timestamp);
+  });
+
+  refreshDerivedSmokeStatus();
+}
+
+function loadLatestTelemetry() {
+  fetch("/api/telemetry?view=today")
+    .then((res) => res.json())
+    .then((data) => applyLatestTelemetry(data))
+    .catch((err) => console.error("Error fetching telemetry:", err));
+}
+
+function applyTheme(theme) {
+  document.body.setAttribute("data-theme", theme);
+  localStorage.setItem("ui-theme", theme);
+  Object.values(gaugeRegistry).forEach((g) => g.chart?.update("none"));
+}
+
+function initTheme() {
+  const saved = localStorage.getItem("ui-theme");
+  if (saved === "dark" || saved === "light") {
+    applyTheme(saved);
+    return;
   }
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  applyTheme(prefersDark ? "dark" : "light");
+}
+
+themeToggle?.addEventListener("click", () => {
+  const current = document.body.getAttribute("data-theme") || "light";
+  applyTheme(current === "dark" ? "light" : "dark");
 });
 
 socket.on("telemetry", (data) => {
   if (notificationTypes.includes(data.type)) {
     addNotification(data.type, data.value, data.timestamp);
+    return;
   }
-  // Reload chart data for live update
-  const value = viewSelect.value;
-  if (value.startsWith("date:")) {
-    const date = value.split(":")[1];
-    loadData("date", date);
-  } else {
-    loadData(value);
+  if (SENSOR_CONFIG[data.type]) {
+    const current = latestTelemetryByType[data.type];
+    if (!current || Number(data.timestamp) >= Number(current.timestamp)) {
+      latestTelemetryByType[data.type] = data;
+    }
+    updateGauge(data.type, data.value, data.timestamp);
+    if (
+      data.type === "CO2_LEVEL" ||
+      data.type === "AMBIENT_TEMPERATURE" ||
+      data.type === "SMOKE_DETECTED"
+    ) {
+      refreshDerivedSmokeStatus();
+    }
   }
 });
 
-loadDates();
-loadData("today");
+renderAllGauges();
+initTheme();
+loadLatestTelemetry();
+setInterval(loadLatestTelemetry, 10000);

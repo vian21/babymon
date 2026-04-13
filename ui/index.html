@@ -5,17 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Baby Monitor Telemetry</title>
     <script src="/vendor/chartjs/chart.umd.min.js"></script>
-    <script src="/vendor/chartjs-adapter/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="/vendor/socket.io/socket.io.min.js"></script>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <header class="topbar">
+      <h1>Baby Monitor Dashboard</h1>
+      <button id="theme-toggle" type="button" aria-label="Toggle dark mode">
+        Toggle theme
+      </button>
+    </header>
     <div class="container">
       <div class="charts-section">
-        <select id="view-select">
-          <option value="today">Today</option>
-          <option value="summary">Summary</option>
-        </select>
         <div id="charts-container"></div>
       </div>
       <div class="notifications-section">
