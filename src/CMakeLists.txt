@@ -18,6 +18,7 @@ idf_component_register(SRCS "main.c"
                             "max30102.c"
                     INCLUDE_DIRS "." "include"
                     REQUIRES esp_http_client
+                             esp_websocket_client
                              esp_event
                              esp_netif
                              esp_wifi

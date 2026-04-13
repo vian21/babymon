@@ -11,7 +11,7 @@ const STATUS_COLORS = {
 };
 
 const notificationTypes = ["TELEMETRY_WARNING", "TELEMETRY_ALERT"];
-const BINARY_TEXT_TYPES = ["MOVEMENT", "SMOKE_DETECTED"];
+const BINARY_TEXT_TYPES = ["MOVEMENT", "SMOKE_DETECTED", "MOVEMENT_LAST_TIME"];
 const latestTelemetryByType = {};
 
 const SENSOR_CONFIG = {
@@ -94,6 +94,21 @@ const SENSOR_CONFIG = {
     unit: "",
     min: 0,
     max: 1,
+    bands: [
+      { min: 0, max: 0.5, level: "good" },
+      { min: 0.5, max: 1.1, level: "ok" },
+    ],
+  },
+  MOVEMENT_LAST_TIME: {
+    label: "Last Movement",
+    unit: "s ago",
+    min: 0,
+    max: 3600,
+    bands: [
+      { min: 0, max: 2400, level: "good" },
+      { min: 2400, max: 3600, level: "ok" },
+      { min: 3600, max: 100000, level: "bad" },
+    ],
   },
   SOUND_LEVEL: {
     label: "Sound Level",
@@ -209,6 +224,12 @@ function formatBinaryStatusText(type, value) {
   }
   if (type === "MOVEMENT") {
     return detected ? "MOVEMENT DETECTED" : "NO MOVEMENT";
+  }
+  if (type === "MOVEMENT_LAST_TIME") {
+    const mins = Math.floor(value / 60);
+    const secs = Math.round(value % 60);
+    if (mins === 0) return `${secs}s ago`;
+    return `${mins}m ${secs}s ago`;
   }
 
   return detected ? "DETECTED" : "NORMAL";
